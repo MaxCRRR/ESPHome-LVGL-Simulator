@@ -36,10 +36,3 @@ Try it live in your browser: [🔗 Live Simulator](#) *(replace with your live d
 
 ---
 
-## 💡 Example
-
-```yaml
-# Paste your ESPHome configuration here
-display:
-  - platform: ...
-    ...
