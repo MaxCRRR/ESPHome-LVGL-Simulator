@@ -7,18 +7,25 @@ Visualize the display output of your entire ESPHome configuration directly in yo
 
 ## ⚡ Key Features
 
-- **🌐 HTML-Based**: Runs entirely in the browser, platform-independent.  
-- **📝 Full ESPHome Simulation**: Paste your entire ESPHome configuration, and the simulator renders the LVGL display output automatically.  
-- **⏱️ Real-Time Rendering**: Accurately displays LVGL widgets, layouts, and styles as they would appear on the actual ESP device.  
-- **🔌 Hardware-Free**: Ideal for testing, debugging, and designing display interfaces without any physical device.  
+- 🌐 **HTML-Based** — Runs entirely in the browser, platform-independent.  
+- 📝 **Full ESPHome Simulation** — Paste your entire ESPHome configuration, and the simulator renders the LVGL display output automatically.  
+- ⏱️ **Real-Time Rendering** — Displays LVGL widgets, layouts, and styles as they would appear on the actual ESP device.  
+- 🔌 **Hardware-Free** — Perfect for testing, debugging, and designing display interfaces without physical hardware.  
+
+---
+
+## 🚀 Live Demo
+
+👉 **Try it now:**  
+https://6a02f30fd25df29a24926860--funny-sawine-ed4fc8.netlify.app/
 
 ---
 
 ## 🚀 How It Works
 
-1. Export or copy your ESPHome configuration.  
-2. Paste it into the simulator.  
-3. See your graphical interface instantly rendered in the browser.  
+1. Copy your ESPHome configuration  
+2. Paste it into the simulator  
+3. Instantly preview your LVGL-based display UI in the browser  
 
 ---
 
@@ -26,13 +33,17 @@ Visualize the display output of your entire ESPHome configuration directly in yo
 
 - ESPHome developers  
 - LVGL UI designers  
-- Hobbyists and makers testing ESP displays without hardware  
+- Makers & hobbyists  
+- Anyone testing ESP display interfaces without hardware  
 
 ---
 
-## 📌 Live Demo
+## 💡 Example Workflow
 
-Try it live in your browser: [🔗 Live Simulator](#) *(replace with your live demo link if available)*
-
----
-
+```yaml
+lvgl:
+  pages:
+    - id: main_page
+      widgets:
+        - label:
+            text: "Hello World"
