@@ -157,12 +157,45 @@ function unquote(v){
   return v;
 }
 
+// Named color table — populated from config color: section
+const _colorTable={
+  red:'#f00',green:'#0f0',blue:'#00f',white:'#fff',black:'#000',
+  yellow:'#ff0',cyan:'#0ff',orange:'#f90',gray:'#888',grey:'#888',
+  magenta:'#f0f',navy:'#000080',teal:'#008080',lime:'#00ff00',
+  silver:'#c0c0c0',springgreen:'#00ff7f',dodgerblue:'#1e90ff',
+  coral:'#ff7f50',purple:'#800080',violet:'#ee82ee',pink:'#ffc0cb',
+  brown:'#a52a2a',gold:'#ffd700',indigo:'#4b0082',
+};
+
 function parseColor(v){
   if(!v)return null;v=String(v).trim().replace(/^["']|["']$/g,'');
   if(/^0[xX][0-9a-fA-F]+$/.test(v))return'#'+v.slice(2).padStart(6,'0');
   if(/^#[0-9a-fA-F]{3,6}$/.test(v))return v;
-  const n={red:'#f00',green:'#0f0',blue:'#00f',white:'#fff',black:'#000',yellow:'#ff0',cyan:'#0ff',orange:'#f90',gray:'#888',grey:'#888',magenta:'#f0f',navy:'#000080',teal:'#008080',lime:'#00ff00',silver:'#c0c0c0',springgreen:'#00ff7f',dodgerblue:'#1e90ff',coral:'#ff7f50'};
-  return n[v.toLowerCase()]||null;
+  // Check dynamic color table (from config color: section)
+  return _colorTable[v.toLowerCase().replace(/[_\s-]/g,'')]||null;
+}
+
+function parseColorSection(lines){
+  let inColor=false;let curId=null;
+  for(let i=0;i<lines.length;i++){
+    const l=lines[i];
+    if(/^color\s*:/.test(l)){inColor=true;continue;}
+    if(inColor&&l.trim()&&/^[a-z]/i.test(l)&&!/^\s/.test(l)){inColor=false;continue;}
+    if(!inColor)continue;
+    const idm=l.match(/^\s+-?\s*id:\s*(\S+)/);
+    const hexm=l.match(/^\s+hex:\s*['"]?([0-9a-fA-F]+)['"]?/);
+    const rm=l.match(/^\s+red:\s*(\d+)/),gm=l.match(/^\s+green:\s*(\d+)/),bm=l.match(/^\s+blue:\s*(\d+)/);
+    if(idm)curId=idm[1];
+    if(hexm&&curId){
+      const key=curId.toLowerCase().replace(/[_\s-]/g,'');
+      _colorTable[key]='#'+hexm[1].padStart(6,'0').slice(-6);
+    }
+    if(rm&&gm&&bm&&curId){
+      const key=curId.toLowerCase().replace(/[_\s-]/g,'');
+      const r=parseInt(rm[1]),g=parseInt(gm[1]),b=parseInt(bm[1]);
+      _colorTable[key]='#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+    }
+  }
 }
 function col(v,d){return parseColor(v)||d||'#fff';}
 function parseOpa(v){if(!v&&v!==0)return 255;v=String(v).trim();if(/^transp/i.test(v)||v==='0')return 0;if(/^cover/i.test(v))return 255;if(v.includes('%'))return Math.round(parseFloat(v)*2.55);const n=parseInt(v);return isNaN(n)?255:n;}
@@ -224,6 +257,53 @@ function resolveAlign(align,xo,yo,pw,ph,ww,wh){
   if(key.includes('left')&&!key.includes('flex'))ax2=xoff;
   if(key.includes('right')&&!key.includes('flex'))ax2=re+xoff;
   return{ax:ax2,ay:ay2};
+}
+
+// ── GRID LAYOUT ──────────────────────────────────────────────────
+function parseGridUnit(s){
+  s=(s||'').trim();
+  const fr=s.match(/^FR\((\d+)\)$/i);if(fr)return{type:'fr',v:parseInt(fr[1])};
+  const px=s.match(/^(\d+)px$/i);if(px)return{type:'px',v:parseInt(px[1])};
+  if(s.toLowerCase()==='content')return{type:'content',v:0};
+  const n=parseInt(s);return isNaN(n)?{type:'fr',v:1}:{type:'px',v:n};
+}
+
+function resolveGridSizes(units,total,pad){
+  const avail=total-2*pad;
+  const pxTotal=units.filter(u=>u.type==='px').reduce((s,u)=>s+u.v,0);
+  const frTotal=units.filter(u=>u.type==='fr').reduce((s,u)=>s+u.v,0)||1;
+  const frUnit=(avail-pxTotal)/frTotal;
+  return units.map(u=>u.type==='px'?u.v:Math.max(0,u.v*frUnit));
+}
+
+function applyGrid(children,gridRows,gridCols,ax,ay,ww,wh,padL,padT){
+  if(!gridRows.length&&!gridCols.length)return;
+  // Default: auto-detect rows/cols if not specified
+  const maxRow=Math.max(0,...children.map(c=>c.gridRow+c.gridRowSpan-1));
+  const maxCol=Math.max(0,...children.map(c=>c.gridCol+c.gridColSpan-1));
+  const rows=gridRows.length?gridRows:Array(maxRow+1).fill({type:'fr',v:1});
+  const cols=gridCols.length?gridCols:Array(maxCol+1).fill({type:'fr',v:1});
+  const rowH=resolveGridSizes(rows,wh,padT);
+  const colW=resolveGridSizes(cols,ww,padL);
+  // Calculate row/col start positions
+  const rowY=[padT];for(let i=1;i<rowH.length;i++)rowY.push(rowY[i-1]+rowH[i-1]);
+  const colX=[padL];for(let i=1;i<colW.length;i++)colX.push(colX[i-1]+colW[i-1]);
+
+  children.forEach(c=>{
+    const r=Math.max(0,c.gridRow),co=Math.max(0,c.gridCol);
+    const rs=Math.max(1,c.gridRowSpan),cs=Math.max(1,c.gridColSpan);
+    const cellX=ax+(colX[co]||0);
+    const cellY=ay+(rowY[r]||0);
+    const cellW=colW.slice(co,co+cs).reduce((s,v)=>s+v,0);
+    const cellH=rowH.slice(r,r+rs).reduce((s,v)=>s+v,0);
+    // Align within cell
+    const xa=(c.gridXAlign||'start').toLowerCase();
+    const ya=(c.gridYAlign||'start').toLowerCase();
+    c.ww=xa==='stretch'?cellW:Math.min(c.ww,cellW);
+    c.wh=ya==='stretch'?cellH:Math.min(c.wh,cellH);
+    c.ax=xa==='center'?cellX+(cellW-c.ww)/2:xa==='end'?cellX+cellW-c.ww:cellX;
+    c.ay=ya==='center'?cellY+(cellH-c.wh)/2:ya==='end'?cellY+cellH-c.wh:cellY;
+  });
 }
 
 // ── FLEX LAYOUT (parse-time) ─────────────────────────────────────
@@ -386,16 +466,23 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
 
   // Flex layout for obj/btn
   if(wt==='obj'||wt==='btn'||wt==='button'){
-    let flexFlow=null,flexMain='start',flexCross='center';
+    let flexFlow=null,flexMain='start',flexCross='center',isGrid=false;
+    let gridRows=[],gridCols=[];
     const layoutLine=body.findIndex(l=>/^\s+layout\s*:/.test(l));
     if(layoutLine>=0){
-      const lb=body.slice(layoutLine+1,layoutLine+15).join('\n');
+      const lb=body.slice(layoutLine+1,layoutLine+20).join('\n');
       const ffm=lb.match(/flex_flow\s*:\s*(\S+)/);
       const fmm=lb.match(/flex_align_main\s*:\s*(\S+)/);
       const fcm=lb.match(/flex_align_cross\s*:\s*(\S+)/);
+      const typeM=lb.match(/type\s*:\s*(\S+)/);
       if(ffm)flexFlow=ffm[1];if(fmm)flexMain=fmm[1];if(fcm)flexCross=fcm[1];
+      if(typeM&&typeM[1].toLowerCase()==='grid')isGrid=true;
+      // Parse grid_rows and grid_columns
+      const grm=lb.match(/grid_rows\s*:\s*\[([^\]]+)\]/);
+      const gcm=lb.match(/grid_columns\s*:\s*\[([^\]]+)\]/);
+      if(grm)gridRows=grm[1].split(',').map(s=>parseGridUnit(s.trim()));
+      if(gcm)gridCols=gcm[1].split(',').map(s=>parseGridUnit(s.trim()));
     }
-    // Also check direct layout: (single line shorthand)
     const ll=body.find(l=>/^\s+flex_flow\s*:/.test(l));
     if(ll){const fm=ll.match(/flex_flow\s*:\s*(\S+)/);if(fm)flexFlow=fm[1];}
 
@@ -404,7 +491,10 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
     for(let i=0;i<body.length;i++){if(/^\s+widgets\s*:\s*$/.test(body[i])){wi=i+1;break;}}
     if(wi>=0){
       const children=parseWidgets(allLines,bs+wi,be,ax,ay,ww,wh);
-      if(flexFlow){
+      if(isGrid&&(gridRows.length||gridCols.length)){
+        applyGrid(children,gridRows,gridCols,ax,ay,ww,wh,padL,padT);
+        w.isGrid=true;
+      } else if(flexFlow){
         applyFlex(children,flexFlow,flexMain,flexCross,ax,ay,ww,wh,padL,padT,padRow,padCol);
       }
       w.children=children;
@@ -439,6 +529,14 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
     if(indL>=0){const ic=getProp(body.slice(indL+1,indL+8),'bg_color');if(ic)w.indColor=col(ic,w.indColor);}
   }
 
+  // Grid cell positioning (used when parent has GRID layout)
+  w.gridRow    = gn('grid_cell_row_pos',    -1);
+  w.gridCol    = gn('grid_cell_column_pos', -1);
+  w.gridRowSpan= gn('grid_cell_row_span',    1);
+  w.gridColSpan= gn('grid_cell_column_span', 1);
+  w.gridXAlign = gp('grid_cell_x_align')||'start';
+  w.gridYAlign = gp('grid_cell_y_align')||'start';
+
   return w;
 }
 
@@ -456,8 +554,8 @@ function parseButtonmatrix(allLines,bs,be){
         if(/^\s+-\s+id:/.test(nl))break;
         const tm=nl.match(/^\s+text\s*:\s*(.+)/);if(tm)text=unquote(tm[1]);
         const pm=nl.match(/lvgl\.page\.show\s*:\s*(\S+)/);if(pm)pageId=pm[1];
-        const nm=nl.match(/lvgl\.page\.next/);if(nm)action='next';
-        const bk=nl.match(/lvgl\.page\.prev/);if(bk)action='prev';
+        if(/lvgl\.page\.next/.test(nl))action='next';
+        const bk=nl.match(/lvgl\.page\.prev(?:ious)?/);if(bk)action='prev';
       }
       items.push({id:bm[1],text,pageId,action,pageIdx:-1});
     }
@@ -767,6 +865,13 @@ function run(){
     _styleDefs={};_btnW=150;_btnH=97;_btnBg='#0C7B5F';_btnRadius=25;_btnColor='#B6B6B6';_btnChkBg='#CC5E14';_btnChkColor='#B6B6B6';
     Object.keys(FMAP).forEach(k=>{if(!k.startsWith('montserrat_'))delete FMAP[k];});
     Object.keys(FICON).forEach(k=>delete FICON[k]);
+
+    // Parse color: section (named colors like "Black", "Dark_Orange")
+    // Reset color table to defaults first
+    const _defaultColors={red:'#f00',green:'#0f0',blue:'#00f',white:'#fff',black:'#000',yellow:'#ff0',cyan:'#0ff',orange:'#f90',gray:'#888',grey:'#888',magenta:'#f0f',navy:'#000080',teal:'#008080',lime:'#00ff00',silver:'#c0c0c0',springgreen:'#00ff7f',dodgerblue:'#1e90ff',coral:'#ff7f50',purple:'#800080',violet:'#ee82ee',pink:'#ffc0cb',brown:'#a52a2a',gold:'#ffd700',indigo:'#4b0082'};
+    Object.keys(_colorTable).forEach(k=>delete _colorTable[k]);
+    Object.assign(_colorTable,_defaultColors);
+    parseColorSection(allLines);
 
     // Parse fonts
     parseFonts(allLines);
