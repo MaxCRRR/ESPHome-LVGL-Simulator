@@ -117,20 +117,89 @@ let W=240,H=240,zoom=1;
 let pages=[],topLayerWidgets=[],currentPage=0;
 let nextId=1,styleDefinitions={};
 
-// Font size map — overridden dynamically from parsed YAML font: section
+// Font size map — fully dynamic, built from parsed YAML
+// Base map has ONLY built-in LVGL fonts (montserrat_*) as fallbacks
 const FONT_MAP={
-  ROBOTO_48:40,ROBOTO_36:30,ROBOTO_24:20,ROBOTO_18:15,ROBOTO_16:14,ROBOTO_14:12,ROBOTO_12:10,
-  my_font_big:32,my_font:22,my_font_medium:18,my_font_small:14,
-  wlan_font:24,my_icon_font:32,
-  MDI_72:60,MDI_48:40,MDI_36:30,MDI_24:20,MDI_18:15,
-  weather_icons_48:50,weather_icons_small:18,
+  // Built-in LVGL montserrat fonts
+  montserrat_8:8,montserrat_10:10,montserrat_12:12,montserrat_14:14,
+  montserrat_16:16,montserrat_18:18,montserrat_20:20,montserrat_22:22,
+  montserrat_24:24,montserrat_26:26,montserrat_28:28,montserrat_30:30,
+  montserrat_32:32,montserrat_34:34,montserrat_36:36,montserrat_38:38,
+  montserrat_40:40,montserrat_42:42,montserrat_44:44,montserrat_46:46,
+  montserrat_48:48,
+  // Fallback defaults for common ESPHome names
+  my_font:22,my_font_big:32,my_font_medium:18,my_font_small:14,
 };
 
-// Icon font registry: fontId → CSS font-family name
-const ICON_FONT_NAMES={
-  MDI_72:'MDI',MDI_48:'MDI',MDI_36:'MDI',MDI_24:'MDI',MDI_18:'MDI',
-  my_icon_font:'MDI',wlan_font:'MDI',
-};
+// Icon font registry: fontId → CSS font-family name  
+// Only built-in registrations; custom fonts added dynamically from config
+const ICON_FONT_NAMES={};
+
+// Track which font families have been registered as @font-face
+const _loadedFontFaces=new Set();
+
+// Register a font dynamically from parsed config
+function registerFont(id, filePath, size){
+  if(!id)return;
+  // Size in pixels (scaled from LVGL pt)
+  const px=Math.round((size||16)*0.82);
+  FONT_MAP[id]=px;
+  
+  if(!filePath)return;
+  const fl=filePath.toLowerCase();
+  
+  // Detect font type from path
+  const isMDI=fl.includes('materialdesign')||fl.includes('mdi-webfont')||fl.includes('mdi_webfont');
+  const isMeteo=fl.includes('meteocon');
+  const isGFont=fl.includes('gfonts://');
+  
+  if(isMDI){
+    ICON_FONT_NAMES[id]='MDI';
+    loadFontFace('MDI',[
+      './fonts/materialdesignicons-webfont.woff2',
+      './fonts/materialdesignicons-webfont.ttf',
+      'https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/fonts/materialdesignicons-webfont.woff2',
+    ]);
+  } else if(isMeteo){
+    ICON_FONT_NAMES[id]='Meteocons';
+    loadFontFace('Meteocons',['./fonts/meteocons.ttf','./fonts/meteocons.woff2']);
+  } else if(isGFont){
+    const fontName=filePath.replace('gfonts://','').split(':')[0].trim();
+    ICON_FONT_NAMES[id]=fontName;
+    // Load via Google Fonts CSS
+    const key='gfont_'+fontName;
+    if(!_loadedFontFaces.has(key)){
+      _loadedFontFaces.add(key);
+      const link=document.createElement('link');
+      link.rel='stylesheet';
+      link.href='https://fonts.googleapis.com/css2?family='+fontName.replace(/ /g,'+')+'&display=swap';
+      document.head.appendChild(link);
+      setTimeout(()=>{redraw();setTimeout(redraw,500);},300);
+    }
+  } else {
+    // Local font file - try to load from fonts/ folder
+    const fileName=filePath.split('/').pop();
+    const familyName=id; // use font id as CSS family name
+    ICON_FONT_NAMES[id]=familyName;
+    loadFontFace(familyName,['./fonts/'+fileName,filePath]);
+  }
+}
+
+async function loadFontFace(family, urls){
+  if(_loadedFontFaces.has(family))return;
+  _loadedFontFaces.add(family);
+  for(const url of urls){
+    try{
+      const f=new FontFace(family,"url('"+url+"')");
+      const loaded=await f.load();
+      document.fonts.add(loaded);
+      console.log('Font loaded: '+family+' from '+url);
+      redraw();setTimeout(redraw,300);
+      return;
+    }catch(e){}
+  }
+  console.warn('Font not found: '+family+' (tried: '+urls.join(', ')+')');
+}
 
 // Load MDI font
 // Load MDI font - works both online and via http-server
@@ -174,6 +243,12 @@ function resolveUnicode(s){
 function cleanVal(v){
   if(v===null||v===undefined)return v;
   v=String(v).trim();
+  // Lambda values → show as placeholder
+  if(v.startsWith('!lambda')||v.startsWith('!lambda')){
+    // Try to extract a meaningful name from the lambda
+    const idMatch=v.match(/id\((\w+)\)/);
+    return idMatch?'~'+idMatch[1]+'~':'~value~';
+  }
   if(v.length>=2&&((v[0]==='"'&&v[v.length-1]==='"')||(v[0]==="'"&&v[v.length-1]==="'")))
     v=v.slice(1,-1);
   else{
@@ -217,10 +292,20 @@ function parseColor(v){
 function col(v,def){return parseColor(v)||def||'#ffffff';}
 
 // ── FONT SIZE ────────────────────────────────────────────
-function fontSize(name){return FONT_MAP[name]||18;}
+function fontSize(name){
+  if(!name)return 18;
+  // Direct lookup
+  if(FONT_MAP[name])return FONT_MAP[name];
+  // Try lowercase
+  if(FONT_MAP[name.toLowerCase()])return FONT_MAP[name.toLowerCase()];
+  // Extract number from name like ROBOTO_24, my_font_48
+  const nm=name.match(/(\d+)$/);
+  if(nm)return Math.round(parseInt(nm[1])*.82);
+  return 18;
+}
 function canvasFontStr(fontName,size){
   const family=ICON_FONT_NAMES[fontName]||null;
-  if(family)return size+'px "'+family+'", sans-serif';
+  if(family)return size+'px "'+family+'", "Material Design Icons", sans-serif';
   return size+'px sans-serif';
 }
 
@@ -793,7 +878,19 @@ function getProp(lines,key){
     if(directIndent>=0&&indOf(l)>directIndent+2)continue;
     if(stopKeys.test(l))break;
     const m=l.match(re);
-    if(m)return cleanVal(m[2]);
+    if(m){
+      const raw=m[2].trim();
+      // Multi-line lambda: value is on next lines
+      if(raw==='|'||raw==='|-'||raw==='>'){
+        // Collect the lambda body
+        const baseInd=indOf(l);
+        let body='';
+        // just return a placeholder
+        const idM=(l+'').match(/id\((\w+)\)/);
+        return idM?'~'+idM[1]+'~':'~value~';
+      }
+      return cleanVal(raw);
+    }
   }
   return null;
 }
@@ -1461,7 +1558,17 @@ function parseAndRender(){
     // Resolve buttonmatrix page refs
     const pageIdToIdx={};pages.forEach((p,idx)=>{pageIdToIdx[p.title]=idx;});
     function resolveNavRefs(ws){ws.forEach(w=>{
-      if(w.navItems)w.navItems.forEach(item=>{if(typeof item.pageId==='string')item.pageIdx=pageIdToIdx[item.pageId]??-1;});
+      if(w.navItems)w.navItems.forEach(item=>{
+        if(typeof item.pageId==='string'){
+          // Try exact match first, then case-insensitive
+          let idx=pageIdToIdx[item.pageId];
+          if(idx===undefined){
+            const lower=item.pageId.toLowerCase();
+            idx=Object.entries(pageIdToIdx).find(([k])=>k.toLowerCase()===lower)?.[1];
+          }
+          item.pageIdx=idx??-1;
+        }
+      });
       if(w.children)resolveNavRefs(w.children);
     });}
     resolveNavRefs(topLayerWidgets);pages.forEach(p=>resolveNavRefs(p.widgets));
