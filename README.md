@@ -1,5 +1,7 @@
 # 🖥️ ESPHome LVGL HTML Simulator
 
+**Build and preview ESPHome LVGL dashboards without constantly flashing your ESP32.**
+
 A **browser-based simulator** for ESPHome displays using **LVGL** (Light and Versatile Graphics Library).  
 Visualize the display output of your entire ESPHome configuration directly in your browser — **no physical hardware required!**
 
