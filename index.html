@@ -48,7 +48,7 @@ button.go:hover{background:#2ea043}
 <body>
 <div id="warn">⚠ file:// erkannt — Icons/Fonts brauchen Webserver: <code>python -m http.server 8080</code> → <a href="http://localhost:8080/esphome_lvgl_simulator.html">localhost:8080</a> | Oder: <code>fonts/materialdesignicons-webfont.woff2</code> lokal ablegen.</div>
 <div id="top">
-  <h1>ESP<span>Home</span> LVGL Simulator</h1>
+  <h1>ESP<span>Home</span> LVGL Simulator</h1><span style="font-size:10px;color:#484f58;margin-left:4px">v1.8</span>
   <div class="badge" id="b-res">–</div>
   <div class="badge" id="b-status">YAML laden → Rendern</div>
   <div class="sp"></div>
@@ -292,8 +292,8 @@ function applyGrid(children,gridRows,gridCols,ax,ay,ww,wh,padL,padT){
   children.forEach(c=>{
     const r=Math.max(0,c.gridRow),co=Math.max(0,c.gridCol);
     const rs=Math.max(1,c.gridRowSpan),cs=Math.max(1,c.gridColSpan);
-    const cellX=ax+(colX[co]||0);
-    const cellY=ay+(rowY[r]||0);
+    const cellX=(colX[co]||0);  // relative to container
+    const cellY=(rowY[r]||0);   // relative to container
     const cellW=colW.slice(co,co+cs).reduce((s,v)=>s+v,0);
     const cellH=rowH.slice(r,r+rs).reduce((s,v)=>s+v,0);
     // Align within cell
@@ -303,6 +303,7 @@ function applyGrid(children,gridRows,gridCols,ax,ay,ww,wh,padL,padT){
     c.wh=ya==='stretch'?cellH:Math.min(c.wh,cellH);
     c.ax=xa==='center'?cellX+(cellW-c.ww)/2:xa==='end'?cellX+cellW-c.ww:cellX;
     c.ay=ya==='center'?cellY+(cellH-c.wh)/2:ya==='end'?cellY+cellH-c.wh:cellY;
+    // These are relative to container
   });
 }
 
@@ -379,6 +380,8 @@ function posRow(row,ma,ca,ax,ay,ww,wh,pad,gap){
 const WTYPES=/^-\s+(label|button|btn|obj|bar|slider|arc|switch|image|buttonmatrix|checkbox|line|led|spinner|meter|roller|dropdown|tabview|spinbox|msgbox|canvas|animimg|keyboard|tileview)\s*:/;
 
 function parseWidgets(allLines,from,to,px,py,pw,ph){
+  // px,py = parent absolute position (for resolveAlign centering math)
+  // Returns widgets with ax,ay RELATIVE to parent (not absolute)
   const res=[];let i=from;
   while(i<to){
     const l=allLines[i]||'';
@@ -443,8 +446,13 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
     const al=body.slice(atIdx+1,atIdx+5).find(l=>/^\s+align\s*:/.test(l));
     return al?unquote(al.match(/:\s*(.+)/)?.[1]):null;
   })();
-  const pos=resolveAlign(align,gn('x'),gn('y'),pw,ph,ww,wh);
-  const ax=px+pos.ax,ay=py+pos.ay;
+  const rawX=gp('x'), rawY=gp('y');
+  const xVal=rawX!==null?parseFloat(rawX)||0:0;
+  const yVal=rawY!==null?parseFloat(rawY)||0:0;
+  const hasXY=rawX!==null||rawY!==null;
+  const pos=resolveAlign(align,xVal,yVal,pw,ph,ww,wh);
+  // ax/ay are RELATIVE to parent container
+  const ax=pos.ax,ay=pos.ay;
 
   const padAll=gn('pad_all',parseInt(sd['pad_all']||0));
   const padL=gn('pad_left',padAll),padR=gn('pad_right',padAll);
@@ -471,7 +479,7 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
     bgColor,bgGrad,bgDir,bgOpa,brdCol,brdW,brdOpa,radius,
     opa,hidden,textAlign,longMode,fontName:tfont,fontSize:fs,
     padL,padR,padT,padB,padRow,padCol,explW,explH,
-    origAlign:align,value:gn('value',0),minVal:gn('min_value',0),maxVal:gn('max_value',100),
+    origAlign:align,_hasXY:hasXY,value:gn('value',0),minVal:gn('min_value',0),maxVal:gn('max_value',100),
     indColor:col(gp('indicator_color'),'#1f6feb'),
     src:gp('src')||'',
     checked:gp('state')==='checked',
@@ -510,10 +518,10 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
     if(wi>=0){
       const children=parseWidgets(allLines,bs+wi,be,ax,ay,ww,wh);
       if(isGrid&&(gridRows.length||gridCols.length)){
-        applyGrid(children,gridRows,gridCols,ax,ay,ww,wh,padL,padT);
+        applyGrid(children,gridRows,gridCols,0,0,ww,wh,padL,padT);
         w.isGrid=true;
       } else if(flexFlow){
-        applyFlex(children,flexFlow,flexMain,flexCross,ax,ay,ww,wh,padL,padT,padRow,padCol);
+        applyFlex(children,flexFlow,flexMain,flexCross,0,0,ww,wh,padL,padT,padRow,padCol);
       }
       w.children=children;
     }
@@ -775,10 +783,12 @@ function drawText(text,defColor,x,y,font,align){
   segs.forEach(sg=>{ctx.font=font;ctx.fillStyle=sg.c;ctx.fillText(sg.t,sx,y);sx+=ctx.measureText(sg.t).width;});
 }
 
-function drawWidget(w){
+function drawWidget(w,pax,pay){
   if(w.hidden)return;
-  const{ax:x,ay:y,ww,wh}=w;
+  pax=pax||0;pay=pay||0;
+  const x=pax+w.ax,y=pay+w.ay,ww=w.ww,wh=w.wh;
   if(ww<=0||wh<=0)return;
+  w._absX=x;w._absY=y;
   const alpha=w.opa<255?w.opa/255:1;
   if(alpha<1)ctx.globalAlpha=alpha;
 
@@ -805,19 +815,24 @@ function drawWidget(w){
 
     // For btn without flex, position children manually
     if((w.type==='btn'||w.type==='button')&&!w.flexFlow&&w.children.length){
-      const btnBg=w.checked?(_btnChkBg):_btnBg;
       w.children.forEach(c=>{
-        if(!c.explicitColor){c.color=w.checked?_btnChkColor:_btnColor;}
+        if(!c.explicitColor)c.color=w.checked?_btnChkColor:_btnColor;
         const ca=(c.origAlign||'').toLowerCase().replace(/[_\s]/g,'');
-        if(ca.includes('top')&&ca.includes('left')){c.ax=x+8;c.ay=y+8;}
-        else if(ca.includes('bottom')&&ca.includes('mid')){c.ax=x+ww/2-c.ww/2;c.ay=y+wh-c.wh-8;}
-        else if(ca.includes('bottom')&&ca.includes('left')){c.ax=x+8;c.ay=y+wh-c.wh-8;}
-        else if(ca.includes('bottom')&&ca.includes('right')){c.ax=x+ww-c.ww-8;c.ay=y+wh-c.wh-8;}
-        else if(ca.includes('center')){c.ax=x+(ww-c.ww)/2;c.ay=y+(wh-c.wh)/2;}
-        else{c.ax=x+8;c.ay=y+8;}
+        // RELATIVE to btn — drawWidget(c,x,y) adds btn's absolute x,y
+        if(ca.includes('top')&&ca.includes('mid'))         {c.ax=(ww-c.ww)/2; c.ay=8;}
+        else if(ca.includes('top')&&ca.includes('left'))   {c.ax=8;            c.ay=8;}
+        else if(ca.includes('top')&&ca.includes('right'))  {c.ax=ww-c.ww-8;   c.ay=8;}
+        else if(ca.includes('bottom')&&ca.includes('mid')) {c.ax=(ww-c.ww)/2; c.ay=wh-c.wh-8;}
+        else if(ca.includes('bottom')&&ca.includes('left')){c.ax=8;            c.ay=wh-c.wh-8;}
+        else if(ca.includes('bottom')&&ca.includes('right')){c.ax=ww-c.ww-8;  c.ay=wh-c.wh-8;}
+        else if(ca.includes('bottom'))                     {c.ax=8;            c.ay=wh-c.wh-8;}
+        else if(ca.includes('center'))                     {c.ax=(ww-c.ww)/2; c.ay=(wh-c.wh)/2;}
+        else if(ca.includes('leftmid')||ca.includes('midleft')){c.ax=8;        c.ay=(wh-c.wh)/2;}
+        else if(ca.includes('rightmid')||ca.includes('midright')){c.ax=ww-c.ww-8;c.ay=(wh-c.wh)/2;}
+        else                                               {c.ax=8;            c.ay=8;}
       });
     }
-    w.children.forEach(drawWidget);
+    w.children.forEach(c=>drawWidget(c,x,y));
     if(alpha<1)ctx.globalAlpha=1;
     return;
   }
@@ -1024,7 +1039,7 @@ function drawWidget(w){
     ctx.beginPath();ctx.arc(cx2,cy2,5,0,Math.PI*2);ctx.fillStyle=w.color||'#fff';ctx.fill();
     
     // Children (labels inside meter)
-    if(w.children&&w.children.length)w.children.forEach(drawWidget);
+    if(w.children&&w.children.length)w.children.forEach(c=>drawWidget(c,x,y));
     
     if(alpha<1)ctx.globalAlpha=1;return;
   }
@@ -1084,8 +1099,8 @@ function redraw(){
   const p=pages[curPage];
   ctx.fillStyle=(p&&p.bg)||'#000';ctx.fillRect(0,0,W,H);
   if(!p)return;
-  p.widgets.forEach(drawWidget);
-  topLayer.forEach(drawWidget);
+  p.widgets.forEach(w=>drawWidget(w,0,0));
+  topLayer.forEach(w=>drawWidget(w,0,0));
 }
 
 // ── NAVIGATION ───────────────────────────────────────────────────
@@ -1101,10 +1116,11 @@ cv.addEventListener('click',e=>{
   function checkWidgets(ws){
     for(const w of ws){
       if(w.hidden)continue;
+      const wx=w._absX!==undefined?w._absX:w.ax, wy=w._absY!==undefined?w._absY:w.ay;
       if(w.type==='buttonmatrix'){
-        if(cx>=w.ax&&cx<=w.ax+w.ww&&cy>=w.ay&&cy<=w.ay+w.wh){
+        if(cx>=wx&&cx<=wx+w.ww&&cy>=wy&&cy<=wy+w.wh){
           const iw=w.ww/Math.max((w.navItems||[]).length,1);
-          const idx=Math.floor((cx-w.ax)/iw);
+          const idx=Math.floor((cx-wx)/iw);
           const item=(w.navItems||[])[idx];
           if(item){
             if(item.action==='next'){goPage(curPage+1);return true;}
@@ -1395,20 +1411,26 @@ function run(){
     const widgetById={};
     function buildIdMap(ws){ws.forEach(w=>{if(w.widgetId)widgetById[w.widgetId]=w;if(w.children)buildIdMap(w.children);});}
     pages.forEach(p=>buildIdMap(p.widgets));buildIdMap(topLayer);
-    function resolveAlignTo(ws){ws.forEach(w=>{
-      if(w.alignToId){
-        const ref=widgetById[w.alignToId];
-        if(ref){
-          const al=(w.alignToAlign||'').toLowerCase().replace(/[_\s]/g,'');
-          if(al.includes('outbottom')){w.ax=ref.ax+(al.includes('mid')?(ref.ww-w.ww)/2:al.includes('right')?ref.ww-w.ww:0);w.ay=ref.ay+ref.wh+3;}
-          else if(al.includes('outtop')){w.ax=ref.ax;w.ay=ref.ay-w.wh-3;}
-          else if(al.includes('outright')){w.ax=ref.ax+ref.ww+3;w.ay=ref.ay;}
-          else if(al.includes('outleft')){w.ax=ref.ax-w.ww-3;w.ay=ref.ay;}
+    // resolveAlignTo runs AFTER first redraw when _absX/_absY are available
+    window._resolveAlignTo=function(){
+      function doResolve(ws){ws.forEach(w=>{
+        if(w.alignToId){
+          const ref=widgetById[w.alignToId];
+          if(ref&&ref._absX!==undefined){
+            const al=(w.alignToAlign||'').toLowerCase().replace(/[_\s]/g,'');
+            // Compute offset relative to ref's parent (same parent assumed)
+            if(al.includes('outbottom')){
+              w.ax=ref.ax+(al.includes('mid')?(ref.ww-w.ww)/2:al.includes('right')?ref.ww-w.ww:0);
+              w.ay=ref.ay+ref.wh+3;
+            } else if(al.includes('outtop')){w.ax=ref.ax;w.ay=ref.ay-w.wh-3;}
+            else if(al.includes('outright')){w.ax=ref.ax+ref.ww+3;w.ay=ref.ay;}
+            else if(al.includes('outleft')){w.ax=ref.ax-w.ww-3;w.ay=ref.ay;}
+          }
         }
-      }
-      if(w.children)resolveAlignTo(w.children);
-    });}
-    pages.forEach(p=>resolveAlignTo(p.widgets));resolveAlignTo(topLayer);
+        if(w.children)doResolve(w.children);
+      });}
+      pages.forEach(p=>doResolve(p.widgets));doResolve(topLayer);
+    };
     applyScriptActions(topLayer);pages.forEach(p=>applyScriptActions(p.widgets));
 
     // Resolve nav refs
@@ -1428,7 +1450,8 @@ function run(){
     resolveNav(topLayer);pages.forEach(p=>resolveNav(p.widgets));
 
     curPage=0;renderPageList();redraw();
-    setTimeout(redraw,400);setTimeout(redraw,1000); // re-render after fonts load
+    setTimeout(()=>{redraw();if(window._resolveAlignTo){window._resolveAlignTo();redraw();}},400);
+    setTimeout(redraw,1000);
 
     const wcount=[...pages.flatMap(p=>flatWidgets(p.widgets)),...flatWidgets(topLayer)].length;
     msg.textContent='✓ '+pages.length+' Seite(n) · '+wcount+' Widgets · '+dW+'×'+dH+'px';
@@ -1444,15 +1467,16 @@ function run(){
 }
 
 function positionBtnChildren(w){
+  // Children positions are RELATIVE to this btn widget
   if(!w.children||w.flexFlow)return;
   w.children.forEach(c=>{
     if(!c.explicitColor)c.color=_btnColor;
     const ca=(c.origAlign||'').toLowerCase().replace(/[_\s]/g,'');
-    if(ca.includes('top')&&ca.includes('left')){c.ax=w.ax+8;c.ay=w.ay+8;}
-    else if(ca.includes('bottom')&&ca.includes('mid')){c.ax=w.ax+w.ww/2-c.ww/2;c.ay=w.ay+w.wh-c.wh-8;}
-    else if(ca.includes('bottom')){c.ax=w.ax+8;c.ay=w.ay+w.wh-c.wh-8;}
-    else if(ca.includes('center')){c.ax=w.ax+(w.ww-c.ww)/2;c.ay=w.ay+(w.wh-c.wh)/2;}
-    else{c.ax=w.ax+8;c.ay=w.ay+8;}
+    if(ca.includes('top')&&ca.includes('left'))    {c.ax=8;          c.ay=8;}
+    else if(ca.includes('bottom')&&ca.includes('mid')){c.ax=(w.ww-c.ww)/2; c.ay=w.wh-c.wh-8;}
+    else if(ca.includes('bottom'))                 {c.ax=8;          c.ay=w.wh-c.wh-8;}
+    else if(ca.includes('center'))                 {c.ax=(w.ww-c.ww)/2; c.ay=(w.wh-c.wh)/2;}
+    else                                           {c.ax=8;          c.ay=8;}
   });
 }
 
