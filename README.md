@@ -936,12 +936,3 @@ lvgl:
                   indicator:
                     bg_color: col_green
 </details>
-
-
-```yaml
-lvgl:
-  pages:
-    - id: main_page
-      widgets:
-        - label:
-            text: "Hello World"
