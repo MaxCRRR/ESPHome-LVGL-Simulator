@@ -17,7 +17,7 @@ Visualize the display output of your entire ESPHome configuration directly in yo
 ## 🚀 Live Demo
 
 👉 **Try it now:**  
-https://6a02f30fd25df29a24926860--funny-sawine-ed4fc8.netlify.app/
+https://6a04341e77217d0008604c8a--funny-sawine-ed4fc8.netlify.app/
 
 ---
 
