@@ -200,7 +200,7 @@ function parseColorSection(lines){
 function col(v,d){return parseColor(v)||d||'#fff';}
 function parseOpa(v){if(!v&&v!==0)return 255;v=String(v).trim();if(/^transp/i.test(v)||v==='0')return 0;if(/^cover/i.test(v))return 255;if(v.includes('%'))return Math.round(parseFloat(v)*2.55);const n=parseInt(v);return isNaN(n)?255:n;}
 
-const BKEYS=/^\s+(widgets|rows|buttons|items|layout|pressed|checked|indicator|scales|indicators|tabs|extras|glyphs)\s*:/;
+const BKEYS=/^\s+(widgets|rows|buttons)\s*:/;
 function getProp(lines,key){
   const re=new RegExp('^(\\s+)'+key+'\\s*:\\s*(.*)$');
   let bi=-1;for(const l of lines){if(!l.trim())continue;bi=ind(l);break;}
@@ -395,7 +395,7 @@ function parseWidgets(allLines,from,to,px,py,pw,ph){
   return res;
 }
 
-let _styleDefs={},_btnW=150,_btnH=97,_btnBg='#0C7B5F',_btnRadius=25,_btnColor='#B6B6B6',_btnChkBg='#CC5E14',_btnChkColor='#B6B6B6';
+let _styleDefs={},_btnW=110,_btnH=59,_btnBg='#313131',_btnRadius=4,_btnColor='#B6B6B6',_btnChkBg='#CC5E14',_btnChkColor='#B6B6B6';
 
 function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
   const body=allLines.slice(bs,be);
@@ -430,9 +430,11 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
   const align=gp('align')||sd['align']||'';
   // align_to: detect - will be resolved after all widgets parsed
   const alignToId=(() => {
-    const atLine=body.find(l=>/^\s+align_to\s*:/.test(l));
-    if(!atLine)return null;
-    const idLine=body.find(l=>/^\s+id\s*:/.test(l));
+    const atIdx=body.findIndex(l=>/^\s+align_to\s*:/.test(l));
+    if(atIdx<0)return null;
+    // Look for 'id:' within the align_to: sub-block (next 5 lines)
+    const sub=body.slice(atIdx+1,atIdx+6);
+    const idLine=sub.find(l=>/^\s+id\s*:/.test(l));
     return idLine?idLine.match(/:\s*(\S+)/)?.[1]:null;
   })();
   const alignToAlign=(() => {
@@ -449,10 +451,12 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
   const padT=gn('pad_top',padAll),padB=gn('pad_bottom',padAll);
   const padRow=gn('pad_row',4),padCol=gn('pad_column',4);
 
-  const bgColor=col(gp('bg_color')||sd['bg_color'],wt==='label'?'transparent':'#111');
+  const _rawBgColor=gp('bg_color')||sd['bg_color']||'';
+  const bgColor=_rawBgColor.toLowerCase().trim()==='transparent'?'transparent':
+    col(_rawBgColor||null, wt==='label'?'transparent':'#111');
   const bgGrad=parseColor(gp('bg_grad_color')||sd['bg_grad_color']);
   const bgDir=(gp('bg_grad_dir')||sd['bg_grad_dir']||'VER').toUpperCase();
-  const bgOpa=parseOpa(gp('bg_opa')||sd['bg_opa']);
+  const bgOpa=bgColor==='transparent'?0:parseOpa(gp('bg_opa')||sd['bg_opa']);
   const brdCol=col(gp('border_color')||sd['border_color'],'#555');
   const brdW=gn('border_width',parseInt(sd['border_width']||0));
   const brdOpa=parseOpa(gp('border_opa')||sd['border_opa']||'COVER');
@@ -549,8 +553,8 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
 
   // Line widget: parse points: and line properties
   if(wt==='line'){
-    w.lineColor=parseColor(gp('line_color'));
-    w.lineWidth=gn('line_width',2);
+    w.lineColor=parseColor(gp('line_color')||sd['line_color']);
+    w.lineWidth=gn('line_width',0)||parseInt(sd['line_width']||0)||2;
     // Parse points: list
     const pts=[];
     let inPts=false;
@@ -569,6 +573,53 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
       if(!w.explW)w.ww=Math.max(...xs)-Math.min(...xs)||2;
       if(!w.explH)w.wh=Math.max(...ys)-Math.min(...ys)||2;
     }
+  }
+
+  // Meter: parse scales for rendering
+  if(wt==='meter'){
+    w.scales=[];
+    let inScales=false,inScale=false,curScale=null,inInd=false,curInd=null;
+    for(let i=0;i<body.length;i++){
+      const l=body[i];
+      if(/^\s+scales\s*:/.test(l)){inScales=true;continue;}
+      if(!inScales)continue;
+      if(l.trim()&&ind(l)<6&&!/^\s/.test(l)){inScales=false;continue;}
+      // New scale entry
+      if(/^\s+-\s+range_from/.test(l)||/^\s+-\s+range_to/.test(l)){
+        if(curScale)w.scales.push(curScale);
+        curScale={rangeFrom:0,rangeTo:100,angleRange:270,rotation:135,
+          ticks:{width:1,count:21,length:10,color:'#888'},
+          indicators:[],inInd:false};
+        const rm=l.match(/range_from\s*:\s*(-?\d+)/);
+        if(rm)curScale.rangeFrom=parseInt(rm[1]);
+        inInd=false;continue;
+      }
+      if(!curScale)continue;
+      const lm=l.match(/^\s+range_to\s*:\s*(-?\d+)/);if(lm)curScale.rangeTo=parseInt(lm[1]);
+      const am=l.match(/^\s+angle_range\s*:\s*(\d+)/);if(am)curScale.angleRange=parseInt(am[1]);
+      const rotm=l.match(/^\s+rotation\s*:\s*(\d+)/);if(rotm)curScale.rotation=parseInt(rotm[1]);
+      // Indicators
+      if(/^\s+indicators\s*:/.test(l)){inInd=true;continue;}
+      if(inInd){
+        if(/^\s+-\s+line\s*:/.test(l)||/^\s+-\s+arc\s*:/.test(l)||/^\s+-\s+tick_style\s*:/.test(l)){
+          if(curInd)curScale.indicators.push(curInd);
+          const type=l.includes('line')?'line':l.includes('arc')?'arc':'tick_style';
+          curInd={type,color:'#fff',width:3,rMod:0,value:0,startValue:0,endValue:100};continue;
+        }
+        if(curInd){
+          const cm=l.match(/^\s+color\s*:\s*(.+)/);if(cm)curInd.color=col(cm[1].trim(),'#fff');
+          const wm=l.match(/^\s+width\s*:\s*(\d+)/);if(wm)curInd.width=parseInt(wm[1]);
+          const rm2=l.match(/^\s+r_mod\s*:\s*(-?\d+)/);if(rm2)curInd.rMod=parseInt(rm2[1]);
+          const vm=l.match(/^\s+value\s*:\s*(\d+)/);if(vm)curInd.value=parseInt(vm[1]);
+          const sv=l.match(/^\s+start_value\s*:\s*(-?\d+)/);if(sv)curInd.startValue=parseInt(sv[1]);
+          const ev=l.match(/^\s+end_value\s*:\s*(-?\d+)/);if(ev)curInd.endValue=parseInt(ev[1]);
+          const cs=l.match(/^\s+color_start\s*:\s*(.+)/);if(cs)curInd.colorStart=col(cs[1].trim(),'#00f');
+          const ce=l.match(/^\s+color_end\s*:\s*(.+)/);if(ce)curInd.colorEnd=col(ce[1].trim(),'#f00');
+        }
+      }
+    }
+    if(curInd&&curScale)curScale.indicators.push(curInd);
+    if(curScale)w.scales.push(curScale);
   }
 
   // canvas: placeholder
@@ -606,29 +657,90 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
   w.gridXAlign = gp('grid_cell_x_align')||'start';
   w.gridYAlign = gp('grid_cell_y_align')||'start';
 
+  // Meter inner widgets (labels inside meter)
+  if(wt==='meter'){
+    let mwi=-1;
+    for(let i=0;i<body.length;i++){
+      if(/^\s+widgets\s*:\s*$/.test(body[i])){mwi=i+1;break;}
+    }
+    if(mwi>=0)w.children=parseWidgets(allLines,bs+mwi,be,ax,ay,ww,wh);
+  }
+
   return w;
 }
 
 function parseButtonmatrix(allLines,bs,be){
   const body=allLines.slice(bs,be);
-  const items=[];let inRows=false;
+  const items=[];
+  
+  // Find the rows: section
+  let rowsStart=-1;
   for(let i=0;i<body.length;i++){
-    if(/^\s+rows\s*:/.test(body[i])){inRows=true;continue;}
-    if(!inRows)continue;
-    const bm=body[i].match(/^\s+-\s+id:\s*(\S+)/);
-    if(bm){
-      let text='?',pageId='',action='';
-      for(let j=i+1;j<Math.min(i+15,body.length);j++){
-        const nl=body[j];
-        if(/^\s+-\s+id:/.test(nl))break;
-        const tm=nl.match(/^\s+text\s*:\s*(.+)/);if(tm)text=unquote(tm[1]);
-        const pm=nl.match(/lvgl\.page\.show\s*:\s*(\S+)/);if(pm)pageId=pm[1];
-        if(/lvgl\.page\.next/.test(nl))action='next';
-        const bk=nl.match(/lvgl\.page\.prev(?:ious)?/);if(bk)action='prev';
-      }
-      items.push({id:bm[1],text,pageId,action,pageIdx:-1});
+    if(/^\s+rows\s*:/.test(body[i])){rowsStart=i+1;break;}
+  }
+  if(rowsStart<0)return items;
+  
+  // Parse buttons from rows
+  // Two formats:
+  // Format A:  - id: btn_id
+  //              text: "x"
+  //              on_press: ...
+  // Format B:  - buttons:
+  //              - id: btn_id / - text: "x"
+  
+  const rowLines=body.slice(rowsStart);
+  let curBtn=null;
+  
+  for(let i=0;i<rowLines.length;i++){
+    const l=rowLines[i];
+    if(!l.trim()||l.trim().startsWith('#'))continue;
+    
+    const lt=l.trimStart();
+    
+    // New button by id
+    const idM=lt.match(/^-\s+id:\s*(\S+)/);
+    // New button by text (inline)
+    const txtM=lt.match(/^-\s+text:\s*(.+)/);
+    
+    if(idM||txtM){
+      if(curBtn)items.push(curBtn);
+      curBtn={
+        id:   idM?idM[1]:'btn'+i,
+        text: txtM?unquote(txtM[1]):'?',
+        pageId:'', action:'', scriptRef:'', pageIdx:-1
+      };
+      continue;
+    }
+    
+    if(!curBtn)continue;
+    
+    // text:
+    const tm=lt.match(/^text:\s*(.+)/);
+    if(tm)curBtn.text=unquote(tm[1]);
+    
+    // Direct page actions
+    if(/lvgl\.page\.next/.test(l))       curBtn.action='next';
+    if(/lvgl\.page\.prev/.test(l))       curBtn.action='prev';
+    const showM=l.match(/lvgl\.page\.show\s*:\s*(\S+)/);
+    if(showM)curBtn.pageId=showM[1];
+    
+    // Script reference — store name for later resolution
+    // Handles both "script.execute: name" and "- script.execute: name"
+    const scrM=l.match(/script\.execute\s*:\s*(\S+)/);
+    if(scrM){
+      curBtn.scriptRef=scrM[1];
+      // Heuristic from script name
+      if(/prev/i.test(scrM[1]))curBtn.action='prev';
+      if(/next/i.test(scrM[1]))curBtn.action='next';
+      if(/home/i.test(scrM[1]))curBtn.action='home';
+    }
+    // Also handle lvgl.page.show: inside on_press block
+    if(!showM){
+      const sm2=l.match(/lvgl\.page\.show\s*:\s*(\S+)/);
+      if(sm2)curBtn.pageId=sm2[1];
     }
   }
+  if(curBtn)items.push(curBtn);
   return items;
 }
 
@@ -683,17 +795,19 @@ function drawWidget(w){
         if((w.type==='btn'||w.type==='button')&&(bg==='transparent'||bg==='#111')){
           bg=w.checked?(_btnChkBg):_btnBg;
         }
-        rr(x,y,ww,wh,w.radius,bg,null);
+        const _r=(w.type==='btn'||w.type==='button')?(w.radius||_btnRadius):w.radius;
+        rr(x,y,ww,wh,_r,bg,null);
       }
       ctx.globalAlpha=alpha;
     }
-    if(w.brdW>0&&w.brdOpa>0)rr(x,y,ww,wh,w.radius,null,w.brdCol,w.brdW);
+    const _r2=(w.type==='btn'||w.type==='button')?(w.radius||_btnRadius):w.radius;
+    if(w.brdW>0&&w.brdOpa>0)rr(x,y,ww,wh,_r2,null,w.brdCol,w.brdW);
 
     // For btn without flex, position children manually
     if((w.type==='btn'||w.type==='button')&&!w.flexFlow&&w.children.length){
       const btnBg=w.checked?(_btnChkBg):_btnBg;
       w.children.forEach(c=>{
-        if(!c.explicitColor)c.color=w.checked?_btnChkColor:_btnColor;
+        if(!c.explicitColor){c.color=w.checked?_btnChkColor:_btnColor;}
         const ca=(c.origAlign||'').toLowerCase().replace(/[_\s]/g,'');
         if(ca.includes('top')&&ca.includes('left')){c.ax=x+8;c.ay=y+8;}
         else if(ca.includes('bottom')&&ca.includes('mid')){c.ax=x+ww/2-c.ww/2;c.ay=y+wh-c.wh-8;}
@@ -717,7 +831,7 @@ function drawWidget(w){
       txt=mm[txt]||txt;font=w.fontSize+'px sans-serif';
     }
     // long_mode truncation
-    if(longMode&&(w.longMode||'').toLowerCase().replace(/_/g,'')!=='wrap'){
+    if(w.longMode&&(w.longMode||'').toLowerCase().replace(/_/g,'')!=='wrap'){
       ctx.font=font;
       const maxW=ww-(w.padL||0)-(w.padR||0)-2;
       if(maxW>10&&ctx.measureText(txt).width>maxW){
@@ -754,9 +868,25 @@ function drawWidget(w){
 
   if(w.type==='arc'){
     const cx2=x+ww/2,cy2=y+wh/2,rad=Math.min(ww,wh)/2-6;
-    const sa=.75*Math.PI,ea=2.25*Math.PI,va=sa+((w.value||0)/(w.maxVal||100))*(ea-sa);
-    ctx.beginPath();ctx.arc(cx2,cy2,rad,sa,ea);ctx.strokeStyle='#222';ctx.lineWidth=8;ctx.lineCap='round';ctx.stroke();
-    ctx.beginPath();ctx.arc(cx2,cy2,rad,sa,va);ctx.strokeStyle=w.indColor||'#1f6feb';ctx.lineWidth=8;ctx.lineCap='round';ctx.stroke();
+    const arcW=w.arcWidth||8;
+    const indArcW=w.indArcWidth||arcW;
+    // Convert LVGL angles (0=right, clockwise) to canvas angles
+    // LVGL: 0=top (in some versions right), canvas: 0=right, CCW positive
+    // LVGL arc: start_angle=0 means right, goes clockwise
+    const deg2rad=d=>(d*Math.PI/180); // LVGL arc: 0=right, CW = same as canvas
+    const sa=w.startAngle!==undefined?deg2rad(w.startAngle):deg2rad(135);
+    const ea=w.endAngle!==undefined?deg2rad(w.endAngle):deg2rad(405);
+    // Draw background arc
+    ctx.beginPath();ctx.arc(cx2,cy2,rad,sa,ea);
+    ctx.strokeStyle=w.bgColor&&w.bgColor!=='transparent'&&w.bgColor!=='#111'?w.bgColor:'#222';
+    ctx.lineWidth=arcW;ctx.lineCap='round';ctx.stroke();
+    // Draw value arc
+    const arcRange=ea>sa?ea-sa:ea-sa+2*Math.PI;
+    const va=sa+((w.value||0)/(w.maxVal||100))*arcRange;
+    if(va>sa){
+      ctx.beginPath();ctx.arc(cx2,cy2,rad,sa,va);
+      ctx.strokeStyle=w.indColor||'#1f6feb';ctx.lineWidth=indArcW;ctx.lineCap='round';ctx.stroke();
+    }
     if(w.text){ctx.font='bold '+Math.max(11,Math.min(ww,wh)/4)+'px sans-serif';ctx.fillStyle=w.color;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(w.text,cx2,cy2);ctx.textAlign='left';}
     if(alpha<1)ctx.globalAlpha=1;return;
   }
@@ -823,18 +953,79 @@ function drawWidget(w){
 
   if(w.type==='meter'){
     const cx2=x+ww/2,cy2=y+wh/2,OR=Math.min(ww,wh)/2-4;
-    rr(x,y,ww,wh,w.radius||OR,w.bgColor==='transparent'?null:w.bgColor||'#1a1a2e',null);
-    if(w.brdW>0)rr(x,y,ww,wh,w.radius||OR,null,w.brdCol,w.brdW);
-    // Simple gauge: draw scale arc and needle
-    const startA=0.75*Math.PI,arcLen=1.5*Math.PI;
-    ctx.beginPath();ctx.arc(cx2,cy2,OR-4,startA,startA+arcLen);ctx.strokeStyle='#333';ctx.lineWidth=3;ctx.lineCap='round';ctx.stroke();
-    const val=(w.value||0),mn=w.minVal||0,mx=w.maxVal||100;
-    const valA=startA+arcLen*((val-mn)/(mx-mn));
-    ctx.beginPath();ctx.arc(cx2,cy2,OR-4,startA,valA);ctx.strokeStyle=w.indColor||'#4fc3f7';ctx.lineWidth=6;ctx.lineCap='round';ctx.stroke();
-    // Needle
-    ctx.beginPath();ctx.moveTo(cx2,cy2);ctx.lineTo(cx2+Math.cos(valA)*(OR-8),cy2+Math.sin(valA)*(OR-8));ctx.strokeStyle='#f00';ctx.lineWidth=2;ctx.lineCap='round';ctx.stroke();
-    ctx.beginPath();ctx.arc(cx2,cy2,4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
-    if(w.text){ctx.font='bold '+Math.max(11,OR/3)+'px sans-serif';ctx.fillStyle=w.color;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(w.text,cx2,cy2+OR/3);ctx.textAlign='left';}
+    // Background
+    const mBg=w.bgColor==='transparent'||w.bgColor==null?null:w.bgColor;
+    if(mBg)rr(x,y,ww,wh,w.radius||0,mBg,null);
+    if(w.brdW>0)rr(x,y,ww,wh,w.radius||0,null,w.brdCol,w.brdW);
+    
+    const scales=w.scales&&w.scales.length?w.scales:[{rangeFrom:0,rangeTo:100,angleRange:270,rotation:135,ticks:{count:11,length:8,width:1,color:'#888'},indicators:[]}];
+    
+    scales.forEach(sc=>{
+      const ar=(sc.angleRange||270)*Math.PI/180;
+      // LVGL rotation: 0=top, clockwise. Convert to canvas angle
+      // LVGL rotation = start angle in degrees (0=east/right, CW positive)
+      // Canvas also 0=east, CW positive → direct conversion
+      const startA=(sc.rotation!==undefined?sc.rotation:135)*Math.PI/180;
+      const endA=startA+ar;
+      const range=sc.rangeTo-sc.rangeFrom||1;
+      
+      // Draw arc indicators (colored bands)
+      sc.indicators.filter(ind=>ind.type==='arc').forEach(ind=>{
+        const r=OR+(ind.rMod||0);
+        const sv=(ind.startValue-sc.rangeFrom)/range;
+        const ev=(ind.endValue-sc.rangeFrom)/range;
+        const a1=startA+sv*ar,a2=startA+ev*ar;
+        ctx.beginPath();ctx.arc(cx2,cy2,Math.max(4,r),a1,a2);
+        ctx.strokeStyle=ind.color||'#4fc3f7';ctx.lineWidth=ind.width||8;ctx.lineCap='butt';ctx.stroke();
+      });
+      
+      // Draw ticks
+      const tc=sc.ticks;
+      if(tc&&tc.count>0){
+        const n=tc.count-1||1;
+        const major=tc.major||null;
+        const stride=major?major.stride||1:1;
+        for(let ti=0;ti<=n;ti++){
+          const a=startA+(ti/n)*ar;
+          const isMajor=major&&(ti%stride===0);
+          const tLen=isMajor?(major.length||12):(tc.length||8);
+          const tW=isMajor?(major.width||2):(tc.width||1);
+          const tColor=isMajor?parseColor(String(major.color||tc.color))||'#999':parseColor(String(tc.color))||'#666';
+          const r1=OR-2,r2=OR-2-tLen;
+          ctx.beginPath();
+          ctx.moveTo(cx2+r1*Math.cos(a),cy2+r1*Math.sin(a));
+          ctx.lineTo(cx2+r2*Math.cos(a),cy2+r2*Math.sin(a));
+          ctx.strokeStyle=tColor;ctx.lineWidth=tW;ctx.stroke();
+          // Draw major tick labels
+          if(isMajor&&major.label_gap>0){
+            const labelR=OR-2-tLen-(major.label_gap||10);
+            const val=sc.rangeFrom+ti/n*(sc.rangeTo-sc.rangeFrom);
+            ctx.fillStyle=w.color||'#fff';
+            ctx.font=Math.max(8,Math.min(14,OR/7))+'px sans-serif';
+            ctx.textAlign='center';ctx.textBaseline='middle';
+            ctx.fillText(Math.round(val),cx2+labelR*Math.cos(a),cy2+labelR*Math.sin(a));
+          }
+        }
+        ctx.textAlign='left';
+      }
+      
+      // Draw line indicators (needles)
+      sc.indicators.filter(ind=>ind.type==='line').forEach(ind=>{
+        const r=OR+(ind.rMod||0);
+        const val=((ind.value||0)-sc.rangeFrom)/range;
+        const a=startA+Math.max(0,Math.min(1,val))*ar;
+        ctx.beginPath();ctx.moveTo(cx2,cy2);
+        ctx.lineTo(cx2+r*Math.cos(a),cy2+r*Math.sin(a));
+        ctx.strokeStyle=ind.color||'#f00';ctx.lineWidth=ind.width||2;ctx.lineCap='round';ctx.stroke();
+      });
+    });
+    
+    // Center dot
+    ctx.beginPath();ctx.arc(cx2,cy2,5,0,Math.PI*2);ctx.fillStyle=w.color||'#fff';ctx.fill();
+    
+    // Children (labels inside meter)
+    if(w.children&&w.children.length)w.children.forEach(drawWidget);
+    
     if(alpha<1)ctx.globalAlpha=1;return;
   }
 
@@ -918,7 +1109,13 @@ cv.addEventListener('click',e=>{
           if(item){
             if(item.action==='next'){goPage(curPage+1);return true;}
             if(item.action==='prev'){goPage(curPage-1);return true;}
+            if(item.action==='home'){goPage(0);return true;}
             if(item.pageIdx>=0){goPage(item.pageIdx);return true;}
+            if(item.pageId){
+              // Try to find page by ID
+              const pi=pages.findIndex(p=>p.id===item.pageId||p.id.toLowerCase()===item.pageId.toLowerCase());
+              if(pi>=0){goPage(pi);return true;}
+            }
           }
         }
       }
@@ -1011,13 +1208,13 @@ function run(){
     for(let i=lvglStart;i<allLines.length;i++){
       if(/^\s+theme\s*:/.test(allLines[i])){
         for(let j=i+1;j<Math.min(i+30,allLines.length);j++){
-          if(/^\s+btn(ton)?\s*:/.test(allLines[j])){
+          if(/^\s+btn(ton)?\s*:/.test(allLines[j])||/^\s+button\s*:/.test(allLines[j])){
             const bi=ind(allLines[j]);
             for(let k=j+1;k<Math.min(j+30,allLines.length);k++){
               const bl=allLines[k];if(!bl.trim())continue;
               if(ind(bl)<=bi)break;
-              const wm=bl.match(/^\s+width\s*:\s*(\d+)/);if(wm)_btnW=parseInt(wm[1]);
-              const hm=bl.match(/^\s+height\s*:\s*(\d+)/);if(hm)_btnH=parseInt(hm[1]);
+              const wm=bl.match(/^\s+width\s*:\s*['"]?(\d+)['"]?px?/);if(wm)_btnW=parseInt(wm[1]);
+              const hm=bl.match(/^\s+height\s*:\s*['"]?(\d+)['"]?px?/);if(hm)_btnH=parseInt(hm[1]);
               const bgm=bl.match(/^\s+bg_color\s*:\s*(.+)/);if(bgm){const c2=parseColor(bgm[1].trim());if(c2)_btnBg=c2;}
               const rm=bl.match(/^\s+radius\s*:\s*(\d+)/);if(rm)_btnRadius=parseInt(rm[1]);
               const cm=bl.match(/^\s+text_color\s*:\s*(.+)/);if(cm){const c2=parseColor(cm[1].trim());if(c2)_btnColor=c2;}
@@ -1056,23 +1253,36 @@ function run(){
 
     // pages
     let pagesLine=-1;
-    for(let i=lvglStart;i<allLines.length;i++){if(/^\s+pages\s*:\s*$/.test(allLines[i])){pagesLine=i;break;}}
+    for(let i=lvglStart;i<allLines.length;i++){
+      const l=allLines[i];
+      if(/^\s+pages\s*:\s*$/.test(l)){pagesLine=i;break;}
+      // Also handle pages: directly under lvgl: (indent 2)
+      if(/^\s{2,4}pages\s*:\s*$/.test(l)){pagesLine=i;break;}
+    }
     if(pagesLine<0){msg.textContent='⚠ Kein "pages:" gefunden.';badge.textContent='Fehler';badge.className='badge err';return;}
 
-    const pInd=ind(allLines[pagesLine]);
+    const pagesIndent=ind(allLines[pagesLine]);
+    // Find the END of pages: block (next key at same indent level)
+    let pagesEnd=allLines.length;
+    for(let i=pagesLine+1;i<allLines.length;i++){
+      const l=allLines[i];
+      if(!l.trim())continue;
+      if(ind(l)<=pagesIndent&&l.trim()!==''&&!/^\s*#/.test(l)){pagesEnd=i;break;}
+    }
+
     const pageBlocks=[];
     let i=pagesLine+1;
-    while(i<allLines.length){
+    while(i<pagesEnd){
       const l=allLines[i];
       if(!l||!l.trim()){i++;continue;}
-      if(ind(l)<=pInd&&l.trim()!=='')break;
+      if(ind(l)<=pagesIndent&&l.trim()!=='')break;
       const pm=l.match(/^\s+-\s+id:\s*(\S+)/);
       if(pm){
-        const pid=pm[2]||pm[1],pi=ind(l),pbs=i+1;let pbe=pbs;
-        while(pbe<allLines.length){
+        const pid=pm[1],pi=ind(l),pbs=i+1;let pbe=pbs;
+        while(pbe<pagesEnd){
           const nl=allLines[pbe];if(!nl||!nl.trim()){pbe++;continue;}
           if(ind(nl)<=pi&&nl.trimStart().startsWith('-'))break;
-          if(ind(nl)<=pInd&&nl.trim()!=='')break;pbe++;
+          pbe++;
         }
         pageBlocks.push({id:pid,start:pbs,end:pbe});i=pbe;continue;
       }
@@ -1110,28 +1320,76 @@ function run(){
       const widgets=wi>=0?parseWidgets(allLines,wi,pb.end,0,0,dW,dH):[];
 
       // Apply page-level flex/grid layout
-      if(pageFlexFlow&&widgets.length>0){
+      // Only apply if widgets don't have explicit absolute positions
+      const hasAbsolutePos=widgets.some(w=>{
+        // Check if ANY widget has explicit x or y (not from align)
+        const body2=allLines.slice(wi>=0?wi:pb.start,pb.end);
+        return false; // We'll use a different approach
+      });
+      // Better check: apply flex only to widgets that have no explicit x/y
+      // i.e., their original x=0 and y=0 (default) AND no origAlign that was resolved
+      const _explicitPos=widgets.filter(w=>w.ax!==0||w.ay!==0).length;
+      if(pageFlexFlow&&widgets.length>0&&_explicitPos<widgets.length*0.5){
         const ff=(pageFlexFlow||'').toLowerCase().replace(/[_\s]/g,'');
         const gap=pagePad||5;
         const bH=_btnH||97,bW=_btnW||150;
-        if(ff==='grid'){
-          // Auto grid
-          const cols=Math.max(1,Math.floor(dW/bW));
-          const gap2=Math.floor((dW-cols*bW)/(cols+1));
-          widgets.forEach((w,idx)=>{
-            const col=idx%cols,row=Math.floor(idx/cols);
-            w.ax=gap2+col*(bW+gap2);w.ay=gap2+row*(bH+gap2);
-            positionBtnChildren(w);
-          });
-        }else{
-          applyFlex(widgets,pageFlexFlow,pageFlexMain,pageFlexCross,0,0,dW,dH,gap,gap,gap,gap);
-          widgets.forEach(w=>positionBtnChildren(w));
+        
+        // Check: if most widgets have non-zero positions, they use absolute layout
+        // In that case, skip flex (the x/y coords are the layout)
+        const nonZeroPos=widgets.filter(w=>w.ax!==0||w.ay!==0).length;
+        const usesAbsolute=nonZeroPos>widgets.length/2;
+        
+        if(!usesAbsolute){
+          if(ff==='grid'){
+            const cols=Math.max(1,Math.floor(dW/bW));
+            const gap2=Math.floor((dW-cols*bW)/(cols+1));
+            widgets.forEach((w,idx)=>{
+              const col=idx%cols,row=Math.floor(idx/cols);
+              w.ax=gap2+col*(bW+gap2);w.ay=gap2+row*(bH+gap2);
+              positionBtnChildren(w);
+            });
+          }else{
+            applyFlex(widgets,pageFlexFlow,pageFlexMain,pageFlexCross,0,0,dW,dH,gap,gap,gap,gap);
+            widgets.forEach(w=>positionBtnChildren(w));
+          }
         }
       }
 
 
       pages.push({id:pb.id,bg,widgets});
     });
+
+    // Parse script actions for page navigation
+    const scriptActions={};
+    let inScript=false,curScriptId=null;
+    for(let i=0;i<allLines.length;i++){
+      const l=allLines[i];
+      if(/^script\s*:/.test(l)||/^  script\s*:/.test(l)){inScript=true;continue;}
+      if(inScript&&l.trim()&&/^[a-z]/i.test(l)&&!/^\s/.test(l)){inScript=false;continue;}
+      if(!inScript)continue;
+      const idm=l.match(/^\s+-\s+id:\s*(\S+)/);if(idm){curScriptId=idm[1];scriptActions[curScriptId]='';}
+      if(curScriptId){
+        if(/lvgl\.page\.next/.test(l))scriptActions[curScriptId]='next';
+        if(/lvgl\.page\.prev/.test(l))scriptActions[curScriptId]='prev';
+        const pm=l.match(/lvgl\.page\.show\s*:\s*(\S+)/);if(pm)scriptActions[curScriptId]='show:'+pm[1];
+      }
+    }
+    // Apply script actions to nav items
+    function applyScriptActions(ws){ws.forEach(w=>{
+      (w.navItems||[]).forEach(item=>{
+        if(item.action===''&&item.pageId===''){
+          // Check if text matches a script
+        }
+        // Resolve script.execute references
+        if(item.scriptRef&&scriptActions[item.scriptRef]){
+          const act=scriptActions[item.scriptRef];
+          if(act==='next')item.action='next';
+          else if(act==='prev')item.action='prev';
+          else if(act.startsWith('show:'))item.pageId=act.slice(5);
+        }
+      });
+      if(w.children)applyScriptActions(w.children);
+    });}
 
     // Build widget ID map for align_to resolution
     const widgetById={};
@@ -1151,6 +1409,7 @@ function run(){
       if(w.children)resolveAlignTo(w.children);
     });}
     pages.forEach(p=>resolveAlignTo(p.widgets));resolveAlignTo(topLayer);
+    applyScriptActions(topLayer);pages.forEach(p=>applyScriptActions(p.widgets));
 
     // Resolve nav refs
     const pageIdx={};pages.forEach((p,i2)=>pageIdx[p.id]=i2);
@@ -1176,8 +1435,11 @@ function run(){
     badge.textContent='OK — '+pages.length+' Seiten';badge.className='badge ok';
 
   }catch(e){
-    msg.textContent='✕ Fehler: '+e.message;badge.textContent='Fehler';badge.className='badge err';
-    console.error(e);
+    msg.textContent='✕ Fehler: '+e.message;
+    badge.textContent='Fehler';badge.className='badge err';
+    console.error('LVGL Sim Error:',e);
+    // Show stack in msg for debugging
+    console.error(e.stack);
   }
 }
 
