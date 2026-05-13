@@ -47,6 +47,7 @@ The following content serves solely as an example; copyright remains with the cr
 
 <details>
 <summary>Example</summary>
+```yaml
 substitutions:
   name: "guition-4848s040"
   friendly_name: "Wohnzimmer Panel"
