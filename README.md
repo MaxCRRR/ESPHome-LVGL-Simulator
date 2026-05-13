@@ -1,6 +1,4 @@
-# 🖥️ ESPHome LVGL HTML Simulator
-
-<img width="199" height="34" alt="image" src="https://github.com/user-attachments/assets/8f40455b-f713-42ee-b077-db314916c4bd" />
+# 🖥️ ESPHome LVGL HTML Simulator        <img width="199" height="34" alt="image" src="https://github.com/user-attachments/assets/8f40455b-f713-42ee-b077-db314916c4bd" />
 
 **Build and preview ESPHome LVGL dashboards without constantly flashing your ESP32.**
 
