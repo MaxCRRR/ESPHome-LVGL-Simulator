@@ -7,6 +7,19 @@ Visualize the display output of your entire ESPHome configuration directly in yo
 
 ---
 
+## 🚀 How It Works
+
+1. Copy your ESPHome configuration  
+2. Paste it into the simulator  
+3. Instantly preview your LVGL-based display UI in the browser
+
+The following content serves solely as an example; copyright remains with the creator.
+<img width="800" height="450" alt="1" src="https://github.com/user-attachments/assets/423513a9-b5f0-4f4a-a1f8-07fc8ee5b4ff" />
+<img width="800" height="450" alt="2" src="https://github.com/user-attachments/assets/ed058792-439a-4e8c-8f3e-537f47b15a99" />
+
+
+---
+
 ## ⚡ Key Features
 
 - 🌐 **HTML-Based** — Runs entirely in the browser, platform-independent.  
@@ -19,19 +32,6 @@ Visualize the display output of your entire ESPHome configuration directly in yo
 ## 🚀 Live Demo
 
 👉 **[Try it now](https://6a043d09acce4f000807132e--funny-sawine-ed4fc8.netlify.app/)**  
-
-
----
-
-## 🚀 How It Works
-
-1. Copy your ESPHome configuration  
-2. Paste it into the simulator  
-3. Instantly preview your LVGL-based display UI in the browser
-
-The following content serves solely as an example; copyright remains with the creator.
-<img width="800" height="450" alt="1" src="https://github.com/user-attachments/assets/423513a9-b5f0-4f4a-a1f8-07fc8ee5b4ff" />
-<img width="800" height="450" alt="2" src="https://github.com/user-attachments/assets/ed058792-439a-4e8c-8f3e-537f47b15a99" />
 
 
 ---
