@@ -27,6 +27,9 @@ Visualize the display output of your entire ESPHome configuration directly in yo
 2. Paste it into the simulator  
 3. Instantly preview your LVGL-based display UI in the browser  
 
+<img width="800" height="396" alt="ezgif-6cee22afb2576a0c" src="https://github.com/user-attachments/assets/1a5c40e5-da17-443a-8e91-41a1524091b6" />
+
+
 ---
 
 ## 🎯 Who It's For
