@@ -48,7 +48,7 @@ button.go:hover{background:#2ea043}
 <body>
 <div id="warn">⚠ file:// erkannt — Icons/Fonts brauchen Webserver: <code>python -m http.server 8080</code> → <a href="http://localhost:8080/esphome_lvgl_simulator.html">localhost:8080</a> | Oder: <code>fonts/materialdesignicons-webfont.woff2</code> lokal ablegen.</div>
 <div id="top">
-  <h1>ESP<span>Home</span> LVGL Simulator</h1><span style="font-size:10px;color:#484f58;margin-left:4px">v1.8</span>
+  <h1>ESP<span>Home</span> LVGL Simulator</h1><span style="font-size:10px;color:#484f58;margin-left:4px">v1.9</span>
   <div class="badge" id="b-res">–</div>
   <div class="badge" id="b-status">YAML laden → Rendern</div>
   <div class="sp"></div>
@@ -482,7 +482,8 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
     origAlign:align,_hasXY:hasXY,value:gn('value',0),minVal:gn('min_value',0),maxVal:gn('max_value',100),
     indColor:col(gp('indicator_color'),'#1f6feb'),
     src:gp('src')||'',
-    checked:gp('state')==='checked',
+    checked:gp('state')==='checked'||gp('state')==='checked: true',
+    checkable:gp('checkable')==='true'||gp('checkable')==='TRUE',
     children:[],navItems:[]
   };
 
@@ -802,8 +803,11 @@ function drawWidget(w,pax,pay){
       }else{
         // btn uses theme color if no explicit bg
         let bg=w.bgColor;
-        if((w.type==='btn'||w.type==='button')&&(bg==='transparent'||bg==='#111')){
-          bg=w.checked?(_btnChkBg):_btnBg;
+        if(w.type==='btn'||w.type==='button'){
+          const isDefault=(bg==='transparent'||bg==='#111');
+          if(isDefault) bg=w.checked?_btnChkBg:_btnBg;
+          // Pressed flash: briefly invert checked color
+          if(w._pressed) bg=w.checked?_btnBg:_btnChkBg;
         }
         const _r=(w.type==='btn'||w.type==='button')?(w.radius||_btnRadius):w.radius;
         rr(x,y,ww,wh,_r,bg,null);
@@ -1110,35 +1114,69 @@ function goPage(i){
   curPage=i;renderPageList();redraw();
 }
 
+// Press animation: briefly show pressed state then redraw
+function simulatePress(w){
+  w._pressed=true;
+  redraw();
+  setTimeout(()=>{w._pressed=false;redraw();},150);
+}
+
 cv.addEventListener('click',e=>{
   const r=cv.getBoundingClientRect();
   const cx=(e.clientX-r.left)/zoom,cy=(e.clientY-r.top)/zoom;
+
+  function hitTest(w){
+    const wx=w._absX!==undefined?w._absX:w.ax;
+    const wy=w._absY!==undefined?w._absY:w.ay;
+    return cx>=wx&&cx<=wx+w.ww&&cy>=wy&&cy<=wy+w.wh;
+  }
+
   function checkWidgets(ws){
-    for(const w of ws){
+    // Check in reverse order (top widget first)
+    for(let i=ws.length-1;i>=0;i--){
+      const w=ws[i];
       if(w.hidden)continue;
-      const wx=w._absX!==undefined?w._absX:w.ax, wy=w._absY!==undefined?w._absY:w.ay;
+
+      // Check children first (they're on top)
+      if(w.children&&w.children.length){
+        if(checkWidgets(w.children))return true;
+      }
+
+      if(!hitTest(w))continue;
+
+      // Buttonmatrix
       if(w.type==='buttonmatrix'){
-        if(cx>=wx&&cx<=wx+w.ww&&cy>=wy&&cy<=wy+w.wh){
-          const iw=w.ww/Math.max((w.navItems||[]).length,1);
-          const idx=Math.floor((cx-wx)/iw);
-          const item=(w.navItems||[])[idx];
-          if(item){
-            if(item.action==='next'){goPage(curPage+1);return true;}
-            if(item.action==='prev'){goPage(curPage-1);return true;}
-            if(item.action==='home'){goPage(0);return true;}
-            if(item.pageIdx>=0){goPage(item.pageIdx);return true;}
-            if(item.pageId){
-              // Try to find page by ID
-              const pi=pages.findIndex(p=>p.id===item.pageId||p.id.toLowerCase()===item.pageId.toLowerCase());
-              if(pi>=0){goPage(pi);return true;}
-            }
+        simulatePress(w);
+        const iw=w.ww/Math.max((w.navItems||[]).length,1);
+        const idx=Math.floor((cx-(w._absX||w.ax))/iw);
+        const item=(w.navItems||[])[idx];
+        if(item){
+          if(item.action==='next'){setTimeout(()=>goPage(curPage+1),100);return true;}
+          if(item.action==='prev'){setTimeout(()=>goPage(curPage-1),100);return true;}
+          if(item.action==='home'){setTimeout(()=>goPage(0),100);return true;}
+          if(item.pageIdx>=0){setTimeout(()=>goPage(item.pageIdx),100);return true;}
+          if(item.pageId){
+            const pi=pages.findIndex(p=>p.id===item.pageId||p.id.toLowerCase()===item.pageId.toLowerCase());
+            if(pi>=0){setTimeout(()=>goPage(pi),100);return true;}
           }
         }
+        return true;
       }
-      if(w.children&&checkWidgets(w.children))return true;
+
+      // Btn / button — toggle checked if checkable
+      if(w.type==='btn'||w.type==='button'){
+        if(w.checkable||w.checked!==undefined){
+          w.checked=!w.checked;
+        }
+        simulatePress(w);
+        return true;
+      }
+
+      // Obj — pass through to children (already checked above)
     }
     return false;
   }
+
   checkWidgets(topLayer)||checkWidgets((pages[curPage]||{widgets:[]}).widgets);
 });
 
