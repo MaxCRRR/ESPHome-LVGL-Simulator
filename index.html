@@ -48,7 +48,7 @@ button.go:hover{background:#2ea043}
 <body>
 <div id="warn">⚠ file:// erkannt — Icons/Fonts brauchen Webserver: <code>python -m http.server 8080</code> → <a href="http://localhost:8080/esphome_lvgl_simulator.html">localhost:8080</a> | Oder: <code>fonts/materialdesignicons-webfont.woff2</code> lokal ablegen.</div>
 <div id="top">
-  <h1>ESP<span>Home</span> LVGL Simulator</h1><span style="font-size:10px;color:#484f58;margin-left:4px">v1.9</span>
+  <h1>ESP<span>Home</span> LVGL Simulator</h1><span style="font-size:10px;color:#484f58;margin-left:4px">v2.0</span>
   <div class="badge" id="b-res">–</div>
   <div class="badge" id="b-status">YAML laden → Rendern</div>
   <div class="sp"></div>
@@ -1163,9 +1163,9 @@ cv.addEventListener('click',e=>{
         return true;
       }
 
-      // Btn / button — toggle checked if checkable
+      // Btn / button — toggle if checkable, flash if not
       if(w.type==='btn'||w.type==='button'){
-        if(w.checkable||w.checked!==undefined){
+        if(w.checkable){
           w.checked=!w.checked;
         }
         simulatePress(w);
@@ -1197,7 +1197,7 @@ function run(){
     const allLines=yaml.split('\n');
 
     // Reset dynamic state
-    _styleDefs={};_btnW=150;_btnH=97;_btnBg='#0C7B5F';_btnRadius=25;_btnColor='#B6B6B6';_btnChkBg='#CC5E14';_btnChkColor='#B6B6B6';
+    _styleDefs={};_btnW=110;_btnH=59;_btnBg='#313131';_btnRadius=4;_btnColor='#e0e0e0';_btnChkBg='#1f6feb';_btnChkColor='#ffffff';
     Object.keys(FMAP).forEach(k=>{if(!k.startsWith('montserrat_'))delete FMAP[k];});
     Object.keys(FICON).forEach(k=>delete FICON[k]);
 
@@ -1267,11 +1267,17 @@ function run(){
             for(let k=j+1;k<Math.min(j+30,allLines.length);k++){
               const bl=allLines[k];if(!bl.trim())continue;
               if(ind(bl)<=bi)break;
-              const wm=bl.match(/^\s+width\s*:\s*['"]?(\d+)['"]?px?/);if(wm)_btnW=parseInt(wm[1]);
-              const hm=bl.match(/^\s+height\s*:\s*['"]?(\d+)['"]?px?/);if(hm)_btnH=parseInt(hm[1]);
-              const bgm=bl.match(/^\s+bg_color\s*:\s*(.+)/);if(bgm){const c2=parseColor(bgm[1].trim());if(c2)_btnBg=c2;}
-              const rm=bl.match(/^\s+radius\s*:\s*(\d+)/);if(rm)_btnRadius=parseInt(rm[1]);
-              const cm=bl.match(/^\s+text_color\s*:\s*(.+)/);if(cm){const c2=parseColor(cm[1].trim());if(c2)_btnColor=c2;}
+
+              // Parse all direct btn: properties (skip if inside checked: sub-block)
+              const _blInd=ind(bl);
+              const _inChecked=_blInd>bi+2; // deeper indent = inside sub-block
+              if(!_inChecked){
+                const bgm=bl.match(/^\s+bg_color\s*:\s*(.+)/);if(bgm){const c2=parseColor(bgm[1].trim());if(c2)_btnBg=c2;}
+                const rm=bl.match(/^\s+radius\s*:\s*(\d+)/);if(rm)_btnRadius=parseInt(rm[1]);
+                const cm=bl.match(/^\s+text_color\s*:\s*(.+)/);if(cm){const c2=parseColor(cm[1].trim());if(c2)_btnColor=c2;}
+                const wm=bl.match(/^\s+width\s*:\s*(\d+)/);if(wm){_btnW=parseInt(wm[1]);console.log('btnW=',_btnW,'from',bl.trim());}
+                const hm=bl.match(/^\s+height\s*:\s*(\d+)/);if(hm){_btnH=parseInt(hm[1]);console.log('btnH=',_btnH,'from',bl.trim());}
+              }
               if(/^\s+checked\s*:/.test(bl)){
                 for(let ck=k+1;ck<Math.min(k+6,allLines.length);ck++){
                   const cl=allLines[ck];if(!cl.trim())continue;if(ind(cl)<=ind(bl))break;
