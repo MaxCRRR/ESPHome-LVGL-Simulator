@@ -806,8 +806,8 @@ function drawWidget(w,pax,pay){
         if(w.type==='btn'||w.type==='button'){
           const isDefault=(bg==='transparent'||bg==='#111');
           if(isDefault) bg=w.checked?_btnChkBg:_btnBg;
-          // Pressed flash: briefly invert checked color
-          if(w._pressed) bg=w.checked?_btnBg:_btnChkBg;
+          // Pressed: show checked color (as defined in theme: btn: checked: bg_color)
+          if(w._pressed) bg=_btnChkBg;
         }
         const _r=(w.type==='btn'||w.type==='button')?(w.radius||_btnRadius):w.radius;
         rr(x,y,ww,wh,_r,bg,null);
@@ -1114,70 +1114,81 @@ function goPage(i){
   curPage=i;renderPageList();redraw();
 }
 
-// Press animation: briefly show pressed state then redraw
-function simulatePress(w){
-  w._pressed=true;
-  redraw();
-  setTimeout(()=>{w._pressed=false;redraw();},150);
+// Track currently pressed widget
+let _pressedWidget=null;
+
+function hitTest(w,cx,cy){
+  const wx=w._absX!==undefined?w._absX:w.ax;
+  const wy=w._absY!==undefined?w._absY:w.ay;
+  return cx>=wx&&cx<=wx+w.ww&&cy>=wy&&cy<=wy+w.wh;
 }
 
-cv.addEventListener('click',e=>{
+function findWidget(ws,cx,cy){
+  for(let i=ws.length-1;i>=0;i--){
+    const w=ws[i];
+    if(w.hidden)continue;
+    if(w.children&&w.children.length){
+      const found=findWidget(w.children,cx,cy);
+      if(found)return found;
+    }
+    if(!hitTest(w,cx,cy))continue;
+    if(w.type==='buttonmatrix'||w.type==='btn'||w.type==='button')return w;
+  }
+  return null;
+}
+
+cv.addEventListener('mousedown',e=>{
   const r=cv.getBoundingClientRect();
   const cx=(e.clientX-r.left)/zoom,cy=(e.clientY-r.top)/zoom;
+  const all=[...topLayer,...((pages[curPage]||{widgets:[]}).widgets)];
+  const w=findWidget(all,cx,cy);
+  if(!w)return;
 
-  function hitTest(w){
-    const wx=w._absX!==undefined?w._absX:w.ax;
-    const wy=w._absY!==undefined?w._absY:w.ay;
-    return cx>=wx&&cx<=wx+w.ww&&cy>=wy&&cy<=wy+w.wh;
-  }
+  // Set pressed state
+  w._pressed=true;
+  _pressedWidget=w;
+  redraw();
+});
 
-  function checkWidgets(ws){
-    // Check in reverse order (top widget first)
-    for(let i=ws.length-1;i>=0;i--){
-      const w=ws[i];
-      if(w.hidden)continue;
+cv.addEventListener('mouseup',e=>{
+  if(!_pressedWidget)return;
+  const r=cv.getBoundingClientRect();
+  const cx=(e.clientX-r.left)/zoom,cy=(e.clientY-r.top)/zoom;
+  const w=_pressedWidget;
 
-      // Check children first (they're on top)
-      if(w.children&&w.children.length){
-        if(checkWidgets(w.children))return true;
-      }
+  // Clear pressed state
+  w._pressed=false;
+  _pressedWidget=null;
 
-      if(!hitTest(w))continue;
-
-      // Buttonmatrix
-      if(w.type==='buttonmatrix'){
-        simulatePress(w);
-        const iw=w.ww/Math.max((w.navItems||[]).length,1);
-        const idx=Math.floor((cx-(w._absX||w.ax))/iw);
-        const item=(w.navItems||[])[idx];
-        if(item){
-          if(item.action==='next'){setTimeout(()=>goPage(curPage+1),100);return true;}
-          if(item.action==='prev'){setTimeout(()=>goPage(curPage-1),100);return true;}
-          if(item.action==='home'){setTimeout(()=>goPage(0),100);return true;}
-          if(item.pageIdx>=0){setTimeout(()=>goPage(item.pageIdx),100);return true;}
-          if(item.pageId){
-            const pi=pages.findIndex(p=>p.id===item.pageId||p.id.toLowerCase()===item.pageId.toLowerCase());
-            if(pi>=0){setTimeout(()=>goPage(pi),100);return true;}
-          }
+  // Only trigger action if mouse released on same widget (proper click)
+  if(hitTest(w,cx,cy)){
+    if(w.type==='buttonmatrix'){
+      const iw=w.ww/Math.max((w.navItems||[]).length,1);
+      const idx=Math.floor((cx-(w._absX||w.ax))/iw);
+      const item=(w.navItems||[])[idx];
+      if(item){
+        if(item.action==='next'){goPage(curPage+1);}
+        else if(item.action==='prev'){goPage(curPage-1);}
+        else if(item.action==='home'){goPage(0);}
+        else if(item.pageIdx>=0){goPage(item.pageIdx);}
+        else if(item.pageId){
+          const pi=pages.findIndex(p=>p.id===item.pageId||p.id.toLowerCase()===item.pageId.toLowerCase());
+          if(pi>=0)goPage(pi);
         }
-        return true;
       }
-
-      // Btn / button — toggle if checkable, flash if not
-      if(w.type==='btn'||w.type==='button'){
-        if(w.checkable){
-          w.checked=!w.checked;
-        }
-        simulatePress(w);
-        return true;
-      }
-
-      // Obj — pass through to children (already checked above)
     }
-    return false;
+    // Note: btn checked state is controlled by HA - no local toggle
   }
+  redraw();
+});
 
-  checkWidgets(topLayer)||checkWidgets((pages[curPage]||{widgets:[]}).widgets);
+// Cancel press if mouse leaves canvas
+cv.addEventListener('mouseleave',e=>{
+  if(_pressedWidget){
+    _pressedWidget._pressed=false;
+    _pressedWidget=null;
+    redraw();
+  }
 });
 
 cv.addEventListener('mousemove',e=>{
