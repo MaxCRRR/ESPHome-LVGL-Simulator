@@ -17,7 +17,6 @@ The following content serves solely as an example; copyright remains with the cr
 <img width="800" height="450" alt="1" src="https://github.com/user-attachments/assets/423513a9-b5f0-4f4a-a1f8-07fc8ee5b4ff" />
 <img width="800" height="450" alt="2" src="https://github.com/user-attachments/assets/ed058792-439a-4e8c-8f3e-537f47b15a99" />
 
-
 ---
 
 ## ⚡ Key Features
@@ -26,13 +25,6 @@ The following content serves solely as an example; copyright remains with the cr
 - 📝 **Full ESPHome Simulation** — Paste your entire ESPHome configuration, and the simulator renders the LVGL display output automatically.  
 - ⏱️ **Real-Time Rendering** — Displays LVGL widgets, layouts, and styles as they would appear on the actual ESP device.  
 - 🔌 **Hardware-Free** — Perfect for testing, debugging, and designing display interfaces without physical hardware.  
-
----
-
-## 🚀 Live Demo
-
-👉 **[Try it now](https://6a043d09acce4f000807132e--funny-sawine-ed4fc8.netlify.app/)**  
-
 
 ---
 
