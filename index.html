@@ -2,13 +2,14 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https://api.anthropic.com https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com data: blob:;">
 <title>ESPHome LVGL Simulator</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 #warn{display:none;background:#da3633;color:#fff;font-size:11px;padding:4px 14px;text-align:center;flex-shrink:0}
 #warn a{color:#fff;font-weight:bold}
-#top{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#161b22;border-bottom:1px solid #30363d;flex-shrink:0}
+#top{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#161b22;border-bottom:1px solid #30363d;flex-shrink:0;flex-wrap:wrap}
 #top h1{font-size:13px;font-weight:600;white-space:nowrap}
 #top h1 span{color:#1f6feb}
 .badge{font-size:11px;color:#8b949e;background:#21262d;border:1px solid #30363d;border-radius:4px;padding:2px 7px;white-space:nowrap}
@@ -56,13 +57,14 @@ button.go:hover{background:#2ea043}
   <div class="badge" id="b-res">–</div>
   <div class="badge" id="b-status">YAML laden → Rendern</div>
   <div class="sp"></div>
-  <div style="display:flex;align-items:center;gap:4px;position:relative">
+  <div style="display:flex;align-items:center;gap:4px">
+    <span style="font-size:11px;color:#8b949e;white-space:nowrap">🤖 AI Key:</span>
     <input id="apikey" type="password" 
-      placeholder="Anthropic API Key (sk-ant-...)" 
-      style="font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid #30363d;background:#21262d;color:#e6edf3;width:200px;outline:none"
+      placeholder="sk-ant-..." 
+      style="font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid #30363d;background:#21262d;color:#e6edf3;width:160px;outline:none"
       oninput="saveKey(this.value)"
-      title="Anthropic API Key für AI Config-Analyse. Wird lokal im Browser gespeichert.">
-    <span id="key-status" style="font-size:14px;cursor:help" title="">⬜</span>
+      title="Anthropic API Key for AI analysis. Stored locally in your browser.">
+    <span id="key-status" style="font-size:12px;cursor:help" title="">⬜</span>
   </div>
   <button class="go" onclick="run()">▶ Rendern</button>
   <button onclick="clearAll()">✕</button>
