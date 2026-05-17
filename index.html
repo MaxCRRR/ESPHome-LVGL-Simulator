@@ -46,6 +46,7 @@ button.go:hover{background:#2ea043}
 .anlz-err{color:#da3633;margin:2px 0;padding:2px 6px;border-left:2px solid #da3633;background:rgba(218,54,51,.08)}
 .anlz-warn{color:#e3b341;margin:2px 0;padding:2px 6px;border-left:2px solid #e3b341;background:rgba(227,179,65,.08)}
 .anlz-ok{color:#3fb950;margin:2px 0;padding:2px 6px;border-left:2px solid #3fb950;background:rgba(63,185,80,.08)}
+#apikey:focus{border-color:#1f6feb!important;box-shadow:0 0 0 2px rgba(31,111,235,.3)}
 </style>
 </head>
 <body>
@@ -55,6 +56,14 @@ button.go:hover{background:#2ea043}
   <div class="badge" id="b-res">–</div>
   <div class="badge" id="b-status">YAML laden → Rendern</div>
   <div class="sp"></div>
+  <div style="display:flex;align-items:center;gap:4px;position:relative">
+    <input id="apikey" type="password" 
+      placeholder="Anthropic API Key (sk-ant-...)" 
+      style="font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid #30363d;background:#21262d;color:#e6edf3;width:200px;outline:none"
+      oninput="saveKey(this.value)"
+      title="Anthropic API Key für AI Config-Analyse. Wird lokal im Browser gespeichert.">
+    <span id="key-status" style="font-size:14px;cursor:help" title="">⬜</span>
+  </div>
   <button class="go" onclick="run()">▶ Rendern</button>
   <button onclick="clearAll()">✕</button>
 </div>
@@ -68,7 +77,7 @@ button.go:hover{background:#2ea043}
   <div id="mid">
     <div id="info"><strong id="i-sz">–</strong><span id="i-bg">–</span><span style="margin-left:auto" id="i-xy">x:– y:–</span></div>
     <div id="wrap"><div id="frame"><div id="bezel"></div><canvas id="cv" width="240" height="240"></canvas></div></div>
-    <div id="analysis" style="display:none;flex-shrink:0;max-height:140px;overflow-y:auto;border-top:1px solid #30363d;padding:6px 12px;font-size:11px;background:#0d1117">
+    <div id="analysis" style="display:none;flex-direction:column;flex-shrink:0;max-height:140px;overflow-y:auto;border-top:1px solid #30363d;padding:6px 12px;font-size:11px;background:#0d1117">
       <div style="color:#8b949e;margin-bottom:4px;font-weight:600">🔍 Config-Analyse <span id="anlz-spin" style="display:none">...</span></div>
       <div id="anlz-results"></div>
     </div>
@@ -1618,64 +1627,100 @@ async function analyzeConfig(yaml){
   const el=document.getElementById('anlz-results');
   const spin=document.getElementById('anlz-spin');
   const panel=document.getElementById('analysis');
-  panel.style.display='block';
+  const keyEl=document.getElementById('apikey');
+  const apiKey=keyEl?keyEl.value.trim():'';
+
+  // No key → hide panel silently
+  if(!apiKey){
+    panel.style.display='none';
+    return;
+  }
+
+  panel.style.display='flex';
   spin.style.display='inline';
   el.innerHTML='';
-  
-  // Truncate yaml to avoid huge requests
-  const yamlShort=yaml.length>4000?yaml.slice(0,4000)+'\n...(gekürzt)':yaml;
-  
+
+  const yamlShort=yaml.length>4000?yaml.slice(0,4000)+'\n...(truncated)':yaml;
+
   try{
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{
         'Content-Type':'application/json',
+        'x-api-key':apiKey,
+        'anthropic-version':'2023-06-01',
         'anthropic-dangerous-direct-browser-access':'true'
       },
       body:JSON.stringify({
         model:'claude-sonnet-4-20250514',
         max_tokens:600,
-        system:`Du bist ein ESPHome LVGL Config-Prüfer. Analysiere die Config und finde Probleme.
-Antworte NUR mit einem JSON-Array, kein Text davor/danach, keine Markdown-Backticks:
-[{"type":"error"|"warning"|"ok","msg":"kurze Beschreibung auf Deutsch"}]
-Maximal 5 Einträge. Prüfe: fehlende Fonts, falsche Dimensionen, überlappende Widgets, 
-ungültige Referenzen, layout-Probleme, !lambda ohne passenden Sensor.
-Wenn alles ok: [{"type":"ok","msg":"Keine Probleme gefunden"}]`,
+        system:`You are an ESPHome LVGL config validator. Analyze the config and find issues.
+Reply ONLY with a JSON array, no text before/after, no markdown backticks:
+[{"type":"error"|"warning"|"ok","msg":"short description in English"}]
+Max 5 entries. Check: missing fonts, wrong dimensions, overlapping widgets,
+invalid references, layout issues, !lambda without matching sensor.
+If everything is fine: [{"type":"ok","msg":"No issues found"}]`,
         messages:[{role:'user',content:'ESPHome LVGL Config:\n'+yamlShort}]
       })
     });
-    
+
     if(!resp.ok){
       const err=await resp.json().catch(()=>({}));
-      throw new Error(err.error?.message||'HTTP '+resp.status);
+      const msg=err.error?.message||'HTTP '+resp.status;
+      // Invalid key
+      if(resp.status===401){
+        el.innerHTML='<div class="anlz-err">✗ Invalid API key — check your Anthropic API key</div>';
+        document.getElementById('key-status').textContent='🔴';
+        document.getElementById('key-status').title='Invalid API key';
+      } else {
+        el.innerHTML=`<div class="anlz-warn">⚠ API error: ${msg}</div>`;
+      }
+      spin.style.display='none';
+      return;
     }
+
     const data=await resp.json();
     const text=data.content?.[0]?.text||'[]';
-    
-    // Parse JSON from response - handle possible text around JSON
     const jsonMatch=text.match(/\[.*\]/s);
     const clean=jsonMatch?jsonMatch[0]:text.replace(/```json|```/g,'').trim();
     const items=JSON.parse(clean);
-    
+
     el.innerHTML=items.map(item=>
       `<div class="anlz-${item.type}">${
         item.type==='error'?'✗':item.type==='warning'?'⚠':'✓'
       } ${item.msg}</div>`
     ).join('');
-    
+
+    document.getElementById('key-status').textContent='🟢';
+    document.getElementById('key-status').title='API key valid';
+
   }catch(e){
-    // Show error message instead of hiding
-    el.innerHTML='<div class="anlz-warn">⚠ AI-Analyse nicht verfügbar — läuft nur in Claude.ai ('+e.message+')</div>';
-    console.log('Analysis not available:', e.message);
+    el.innerHTML=`<div class="anlz-warn">⚠ Analysis failed: ${e.message}</div>`;
+    console.log('Analysis error:',e);
   }
   spin.style.display='none';
 }
+
+function saveKey(val){
+  localStorage.setItem('lvgl_apikey', val);
+  // Reset status icon when key changes
+  const ks=document.getElementById('key-status');
+  if(ks){ks.textContent=val?'⬜':'⬜';ks.title='';}
+}
+
 
 // ── INIT ─────────────────────────────────────────────────────────
 if(location.protocol==='file:')document.getElementById('warn').style.display='block';
 // Restore API key
 const _savedKey=localStorage.getItem('lvgl_apikey');
-if(_savedKey&&document.getElementById('apikey'))document.getElementById('apikey').value=_savedKey;
+if(_savedKey){
+  const _keyEl=document.getElementById('apikey');
+  if(_keyEl){
+    _keyEl.value=_savedKey;
+    document.getElementById('key-status').textContent='⬜';
+    document.getElementById('key-status').title='Key loaded from storage';
+  }
+}
 initDisplay(240,240,'#000');redraw();
 </script>
 </body>
