@@ -43,12 +43,15 @@ button.go:hover{background:#2ea043}
 .dot{width:5px;height:5px;border-radius:50%;background:#30363d;flex-shrink:0}.pi.on .dot{background:#1f6feb}
 #wc{padding:6px 10px;border-top:1px solid #30363d;font-size:10px;color:#484f58;flex-shrink:0}
 @font-face{font-family:'MDI';src:url('./fonts/materialdesignicons-webfont.woff2') format('woff2'),url('./fonts/materialdesignicons-webfont.ttf') format('truetype'),url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/fonts/materialdesignicons-webfont.woff2') format('woff2');font-display:block}
+.anlz-err{color:#da3633;margin:2px 0;padding:2px 6px;border-left:2px solid #da3633;background:rgba(218,54,51,.08)}
+.anlz-warn{color:#e3b341;margin:2px 0;padding:2px 6px;border-left:2px solid #e3b341;background:rgba(227,179,65,.08)}
+.anlz-ok{color:#3fb950;margin:2px 0;padding:2px 6px;border-left:2px solid #3fb950;background:rgba(63,185,80,.08)}
 </style>
 </head>
 <body>
 <div id="warn">⚠ file:// erkannt — Icons/Fonts brauchen Webserver: <code>python -m http.server 8080</code> → <a href="http://localhost:8080/esphome_lvgl_simulator.html">localhost:8080</a> | Oder: <code>fonts/materialdesignicons-webfont.woff2</code> lokal ablegen.</div>
 <div id="top">
-  <h1>ESP<span>Home</span> LVGL Simulator</h1><span style="font-size:10px;color:#484f58;margin-left:4px">v2.0</span>
+  <h1>ESP<span>Home</span> LVGL Simulator</h1><span style="font-size:10px;color:#484f58;margin-left:4px">v2.3</span>
   <div class="badge" id="b-res">–</div>
   <div class="badge" id="b-status">YAML laden → Rendern</div>
   <div class="sp"></div>
@@ -65,6 +68,10 @@ button.go:hover{background:#2ea043}
   <div id="mid">
     <div id="info"><strong id="i-sz">–</strong><span id="i-bg">–</span><span style="margin-left:auto" id="i-xy">x:– y:–</span></div>
     <div id="wrap"><div id="frame"><div id="bezel"></div><canvas id="cv" width="240" height="240"></canvas></div></div>
+    <div id="analysis" style="display:none;flex-shrink:0;max-height:140px;overflow-y:auto;border-top:1px solid #30363d;padding:6px 12px;font-size:11px;background:#0d1117">
+      <div style="color:#8b949e;margin-bottom:4px;font-weight:600">🔍 Config-Analyse <span id="anlz-spin" style="display:none">...</span></div>
+      <div id="anlz-results"></div>
+    </div>
   </div>
   <div id="sb">
     <div id="sbh">Seiten</div>
@@ -479,7 +486,7 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
     bgColor,bgGrad,bgDir,bgOpa,brdCol,brdW,brdOpa,radius,
     opa,hidden,textAlign,longMode,fontName:tfont,fontSize:fs,
     padL,padR,padT,padB,padRow,padCol,explW,explH,
-    origAlign:align,_hasXY:hasXY,value:gn('value',0),minVal:gn('min_value',0),maxVal:gn('max_value',100),
+    origAlign:align,_hasXY:hasXY,value:(()=>{const rv=gp('value');if(!rv||String(rv).startsWith('~'))return 0;const v=parseFloat(rv);return isNaN(v)?0:v;})(),minVal:gn('min_value',0),maxVal:gn('max_value',100),
     indColor:col(gp('indicator_color'),'#1f6feb'),
     src:gp('src')||'',
     checked:gp('state')==='checked'||gp('state')==='checked: true',
@@ -619,7 +626,15 @@ function buildWidget(wt,allLines,bs,be,px,py,pw,ph){
           const cm=l.match(/^\s+color\s*:\s*(.+)/);if(cm)curInd.color=col(cm[1].trim(),'#fff');
           const wm=l.match(/^\s+width\s*:\s*(\d+)/);if(wm)curInd.width=parseInt(wm[1]);
           const rm2=l.match(/^\s+r_mod\s*:\s*(-?\d+)/);if(rm2)curInd.rMod=parseInt(rm2[1]);
-          const vm=l.match(/^\s+value\s*:\s*(\d+)/);if(vm)curInd.value=parseInt(vm[1]);
+          const vm=l.match(/^\s+value\s*:\s*(\S+)/);
+          if(vm){
+            const rv=vm[1].trim();
+            if(rv.startsWith('!lambda')||rv.startsWith('~')){
+              curInd.value=curScale?curScale.rangeFrom+Math.random()*(curScale.rangeTo-curScale.rangeFrom):Math.random()*100;
+            }else{
+              curInd.value=parseInt(rv)||0;
+            }
+          }
           const sv=l.match(/^\s+start_value\s*:\s*(-?\d+)/);if(sv)curInd.startValue=parseInt(sv[1]);
           const ev=l.match(/^\s+end_value\s*:\s*(-?\d+)/);if(ev)curInd.endValue=parseInt(ev[1]);
           const cs=l.match(/^\s+color_start\s*:\s*(.+)/);if(cs)curInd.colorStart=col(cs[1].trim(),'#00f');
@@ -845,12 +860,12 @@ function drawWidget(w,pax,pay){
     let txt=w.text||'';
     let font=fcss(w.fontName,w.fontSize);
     // Meteocons emoji mapping
-    if(FICON[w.fontName]==='Meteocons'){
-      const mm={'B':'☀️','I':'🌙','H':'⛅','N':'☁️','M':'🌫️','R':'🌧️','X':'⛈️','W':'❄️','S':'🌩️','F':'💨','U':'🌨️','E':'🌡️',"'":'🌡️','0':'☀️'};
-      txt=mm[txt]||txt;font=w.fontSize+'px sans-serif';
-    }
-    // long_mode truncation
-    if(w.longMode&&(w.longMode||'').toLowerCase().replace(/_/g,'')!=='wrap'){
+    // Meteocons: use registered font directly
+    // long_mode truncation: ONLY if explicitly set to DOT/SCROLL/CLIP
+    // Default (no long_mode) = wrap = no truncation
+    const lm=(w.longMode||'').toLowerCase().replace(/[_\s]/g,'');
+    const shouldTruncate=lm==='dot'||lm==='clip'||lm==='scroll'||lm==='scrollcircular';
+    if(shouldTruncate){
       ctx.font=font;
       const maxW=ww-(w.padL||0)-(w.padR||0)-2;
       if(maxW>10&&ctx.measureText(txt).width>maxW){
@@ -867,7 +882,8 @@ function drawWidget(w,pax,pay){
   }
 
   if(w.type==='bar'){
-    const val=w.value||50;
+    // If value is 0 (default/unset), use random for visual demo
+    const val=w.value||Math.round(10+Math.random()*80);
     rr(x,y,ww,wh,w.radius||3,w.bgColor==='transparent'||w.bgColor==='#111'?'#333':w.bgColor,null);
     const bw=Math.max(0,(val/(w.maxVal||100))*(ww-2));
     let bc=w.indColor||'#3fb950';
@@ -877,6 +893,7 @@ function drawWidget(w,pax,pay){
   }
 
   if(w.type==='slider'){
+    if(!w.value)w.value=w.minVal+(Math.random()*(w.maxVal-w.minVal));
     const val=((w.value||50)/(w.maxVal||100))*ww;
     ctx.fillStyle='#333';ctx.beginPath();ctx.roundRect(x,y+wh/2-4,ww,8,4);ctx.fill();
     ctx.fillStyle=w.indColor||'#1f6feb';ctx.beginPath();ctx.roundRect(x,y+wh/2-4,val,8,4);ctx.fill();
@@ -889,6 +906,8 @@ function drawWidget(w,pax,pay){
     const cx2=x+ww/2,cy2=y+wh/2,rad=Math.min(ww,wh)/2-6;
     const arcW=w.arcWidth||8;
     const indArcW=w.indArcWidth||arcW;
+    // Random value if not set or 0
+    if(!w.value)w.value=w.minVal+(Math.random()*(w.maxVal-w.minVal));
     // Convert LVGL angles (0=right, clockwise) to canvas angles
     // LVGL: 0=top (in some versions right), canvas: 0=right, CCW positive
     // LVGL arc: start_angle=0 means right, goes clockwise
@@ -920,7 +939,7 @@ function drawWidget(w,pax,pay){
   if(w.type==='image'||w.type==='animimg'){
     rr(x,y,ww,wh,4,'#1a2030','#2a3a50');
     ctx.fillStyle='#4a6080';ctx.font='11px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-    const lbl=w.type==='animimg'?'🎞 anim':'🖼 '+(w.src||'img');
+    const lbl=w.type==='animimg'?'[anim]':'[img:'+(w.src||'?')+']';
     ctx.fillText(lbl,x+ww/2,y+wh/2);ctx.textAlign='left';
     if(alpha<1)ctx.globalAlpha=1;return;
   }
@@ -1031,6 +1050,7 @@ function drawWidget(w,pax,pay){
       // Draw line indicators (needles)
       sc.indicators.filter(ind=>ind.type==='line').forEach(ind=>{
         const r=OR+(ind.rMod||0);
+        if(!ind.value)ind.value=sc.rangeFrom+Math.random()*(sc.rangeTo-sc.rangeFrom);
         const val=((ind.value||0)-sc.rangeFrom)/range;
         const a=startA+Math.max(0,Math.min(1,val))*ar;
         ctx.beginPath();ctx.moveTo(cx2,cy2);
@@ -1076,8 +1096,12 @@ function drawWidget(w,pax,pay){
   if(w.type==='buttonmatrix'){
     const items=w.navItems||[];
     const iw=ww/Math.max(items.length,1);
-    if(w.bgGrad)vgrad(x,y,ww,wh,w.bgColor||'#2F8CD8',w.bgGrad);
-    else{ctx.fillStyle=w.bgColor||'#2F8CD8';ctx.fillRect(x,y,ww,wh);}
+    // Background from parsed YAML (styles: or explicit bg_color)
+    const bmBg=w.bgColor&&w.bgColor!=='transparent'&&w.bgColor!=='#111'?w.bgColor:null;
+    if(bmBg){
+      if(w.bgGrad)vgrad(x,y,ww,wh,bmBg,w.bgGrad);
+      else{ctx.fillStyle=bmBg;ctx.fillRect(x,y,ww,wh);}
+    }
     items.forEach((item,i)=>{
       const ix=x+i*iw,active=item.pageIdx===curPage;
       if(active){ctx.fillStyle=w.chkBg||'rgba(255,255,255,.22)';ctx.fillRect(ix,y,iw,wh);}
@@ -1511,6 +1535,10 @@ function run(){
     const wcount=[...pages.flatMap(p=>flatWidgets(p.widgets)),...flatWidgets(topLayer)].length;
     msg.textContent='✓ '+pages.length+' Seite(n) · '+wcount+' Widgets · '+dW+'×'+dH+'px';
     badge.textContent='OK — '+pages.length+' Seiten';badge.className='badge ok';
+    setTimeout(()=>{redraw();if(window._resolveAlignTo){window._resolveAlignTo();redraw();}},400);
+    setTimeout(redraw,1000);
+    // Auto-analyze
+    analyzeConfig(raw);
 
   }catch(e){
     msg.textContent='✕ Fehler: '+e.message;
@@ -1585,8 +1613,61 @@ document.getElementById('rh').addEventListener('mousedown',e=>{resizing=true;res
 document.addEventListener('mousemove',e=>{if(!resizing)return;const nw=Math.max(180,Math.min(640,resW+(e.clientX-resX)));document.getElementById('ed').style.width=nw+'px';});
 document.addEventListener('mouseup',()=>resizing=false);
 
+// ── CONFIG ANALYSIS ──────────────────────────────────────
+async function analyzeConfig(yaml){
+  const el=document.getElementById('anlz-results');
+  const spin=document.getElementById('anlz-spin');
+  const panel=document.getElementById('analysis');
+  panel.style.display='block';
+  spin.style.display='inline';
+  el.innerHTML='';
+  
+  // Truncate yaml to avoid huge requests
+  const yamlShort=yaml.length>4000?yaml.slice(0,4000)+'\n...(gekürzt)':yaml;
+  
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:600,
+        system:`Du bist ein ESPHome LVGL Config-Prüfer. Analysiere die Config und finde Probleme.
+Antworte NUR mit einem JSON-Array, kein Text davor/danach, keine Markdown-Backticks:
+[{"type":"error"|"warning"|"ok","msg":"kurze Beschreibung auf Deutsch"}]
+Maximal 5 Einträge. Prüfe: fehlende Fonts, falsche Dimensionen, überlappende Widgets, 
+ungültige Referenzen, layout-Probleme, !lambda ohne passenden Sensor.
+Wenn alles ok: [{"type":"ok","msg":"Keine Probleme gefunden"}]`,
+        messages:[{role:'user',content:'ESPHome LVGL Config:\n'+yamlShort}]
+      })
+    });
+    
+    const data=await resp.json();
+    const text=data.content?.[0]?.text||'[]';
+    
+    // Parse JSON from response
+    const clean=text.replace(/```json|```/g,'').trim();
+    const items=JSON.parse(clean);
+    
+    el.innerHTML=items.map(item=>
+      `<div class="anlz-${item.type}">${
+        item.type==='error'?'✗':item.type==='warning'?'⚠':'✓'
+      } ${item.msg}</div>`
+    ).join('');
+    
+  }catch(e){
+    // Silently fail if API not available (e.g. running locally)
+    panel.style.display='none';
+    console.log('Analysis not available:', e.message);
+  }
+  spin.style.display='none';
+}
+
 // ── INIT ─────────────────────────────────────────────────────────
 if(location.protocol==='file:')document.getElementById('warn').style.display='block';
+// Restore API key
+const _savedKey=localStorage.getItem('lvgl_apikey');
+if(_savedKey&&document.getElementById('apikey'))document.getElementById('apikey').value=_savedKey;
 initDisplay(240,240,'#000');redraw();
 </script>
 </body>
