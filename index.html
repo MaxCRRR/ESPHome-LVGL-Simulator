@@ -1628,7 +1628,10 @@ async function analyzeConfig(yaml){
   try{
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{
+        'Content-Type':'application/json',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
       body:JSON.stringify({
         model:'claude-sonnet-4-20250514',
         max_tokens:600,
@@ -1642,11 +1645,16 @@ Wenn alles ok: [{"type":"ok","msg":"Keine Probleme gefunden"}]`,
       })
     });
     
+    if(!resp.ok){
+      const err=await resp.json().catch(()=>({}));
+      throw new Error(err.error?.message||'HTTP '+resp.status);
+    }
     const data=await resp.json();
     const text=data.content?.[0]?.text||'[]';
     
-    // Parse JSON from response
-    const clean=text.replace(/```json|```/g,'').trim();
+    // Parse JSON from response - handle possible text around JSON
+    const jsonMatch=text.match(/\[.*\]/s);
+    const clean=jsonMatch?jsonMatch[0]:text.replace(/```json|```/g,'').trim();
     const items=JSON.parse(clean);
     
     el.innerHTML=items.map(item=>
@@ -1656,8 +1664,8 @@ Wenn alles ok: [{"type":"ok","msg":"Keine Probleme gefunden"}]`,
     ).join('');
     
   }catch(e){
-    // Silently fail if API not available (e.g. running locally)
-    panel.style.display='none';
+    // Show error message instead of hiding
+    el.innerHTML='<div class="anlz-warn">⚠ AI-Analyse nicht verfügbar — läuft nur in Claude.ai ('+e.message+')</div>';
     console.log('Analysis not available:', e.message);
   }
   spin.style.display='none';
