@@ -13,6 +13,11 @@ Paste your ESPHome config and instantly see how your display will look — **no 
 2. Paste it into the simulator editor
 3. Click **Render** — your display appears instantly
 
+The following content serves solely as an example; copyright remains with the creator.
+<img width="800" height="450" alt="1" src="https://github.com/user-attachments/assets/423513a9-b5f0-4f4a-a1f8-07fc8ee5b4ff" />
+<img width="800" height="450" alt="2" src="https://github.com/user-attachments/assets/ed058792-439a-4e8c-8f3e-537f47b15a99" />
+
+
 The simulator parses the entire config dynamically — substitutions, fonts, colors, layouts, pages and navigation all work out of the box.
 
 ---
