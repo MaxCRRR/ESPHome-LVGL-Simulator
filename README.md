@@ -62,18 +62,18 @@ python -m http.server 8080
 ```
 Then open: `http://localhost:8080/index.html`
 
-For MDI icons offline: place `yourMDIfile.woff2` in a `fonts/` subfolder next to the HTML file.
+For MDI icons offline: place `materialdesignicons-webfont.woff2` or `.ttf` in a `fonts/` subfolder next to the HTML file. Both formats are supported — `woff2` is preferred (smaller), `ttf` is used as fallback.
 
 ---
 
 ## 📦 Supported ESPHome Features
-
+ 
 | Feature | Supported |
 |---|:---:|
 | Substitutions | ✅ |
 | Named colors (`color:` section) | ✅ |
 | Style definitions & theme | ✅ |
-| Dynamic font system (MDI, Meteocons, gfonts://, local) | ✅ |
+| Dynamic font system (MDI, Meteocons, gfonts://, local .ttf/.woff2) | ✅ |
 | Flex layout (ROW / COLUMN / WRAP) | ✅ |
 | Grid layout (FR / px) | ✅ |
 | Top layer | ✅ |
