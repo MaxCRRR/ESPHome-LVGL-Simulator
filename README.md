@@ -62,7 +62,7 @@ python -m http.server 8080
 ```
 Then open: `http://localhost:8080/index.html`
 
-For MDI icons offline: place `materialdesignicons-webfont.woff2` or `.ttf` in a `fonts/` subfolder next to the HTML file. Both formats are supported — `woff2` is preferred (smaller), `ttf` is used as fallback.
+For MDI icons offline: place `yourFONTorMDIfile.woff2` or `.ttf` in a `fonts/` subfolder next to the HTML file. Both formats are supported — `woff2` is preferred (smaller), `ttf` is used as fallback.
 
 ---
 
